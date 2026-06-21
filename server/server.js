@@ -240,6 +240,84 @@ app.post('/api/reservations', (req, res) => {
   }
 });
 
+// ─── Book CRUD API ───────────────────────────────────────────────────────────
+app.post('/api/books', (req, res) => {
+  const { id, title, author, isbn, category, cover, abstract, total, publishYear } = req.body;
+  if (!id || !title || !author || !isbn || !category || total === undefined) {
+    return res.status(400).json({ error: 'Please fill in all required fields (ID, Title, Author, ISBN, Category, Total Copies).' });
+  }
+  try {
+    const existingId = db.prepare('SELECT id FROM books WHERE id = ?').get(id);
+    if (existingId) {
+      return res.status(400).json({ error: 'Book ID already exists.' });
+    }
+    const existingIsbn = db.prepare('SELECT isbn FROM books WHERE isbn = ?').get(isbn);
+    if (existingIsbn) {
+      return res.status(400).json({ error: 'ISBN already exists.' });
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO books (id, title, author, isbn, category, cover, abstract, available, total, borrow_count, publish_year)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+    `);
+    stmt.run(id, title, author, isbn, category, cover || '', abstract || '', total, total, publishYear || null);
+    res.status(201).json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/books/:id', (req, res) => {
+  const { id } = req.params;
+  const { title, author, isbn, category, cover, abstract, total, publishYear } = req.body;
+  if (!title || !author || !isbn || !category || total === undefined) {
+    return res.status(400).json({ error: 'Please fill in all required fields.' });
+  }
+  try {
+    const existingIsbn = db.prepare('SELECT id FROM books WHERE isbn = ? AND id != ?').get(isbn, id);
+    if (existingIsbn) {
+      return res.status(400).json({ error: 'ISBN is already in use by another book.' });
+    }
+
+    const book = db.prepare('SELECT * FROM books WHERE id = ?').get(id);
+    if (!book) {
+      return res.status(404).json({ error: 'Book not found.' });
+    }
+
+    const copiesBorrowed = book.total - book.available;
+    const newAvailable = Math.max(0, total - copiesBorrowed);
+
+    const stmt = db.prepare(`
+      UPDATE books
+      SET title = ?, author = ?, isbn = ?, category = ?, cover = ?, abstract = ?, available = ?, total = ?, publish_year = ?
+      WHERE id = ?
+    `);
+    stmt.run(title, author, isbn, category, cover || '', abstract || '', newAvailable, total, publishYear || null, id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/books/:id', (req, res) => {
+  const { id } = req.params;
+  try {
+    const activeTxn = db.prepare("SELECT id FROM transactions WHERE book_id = ? AND status IN ('active', 'overdue')").get(id);
+    if (activeTxn) {
+      return res.status(400).json({ error: 'Cannot delete book: There are active or overdue borrowing records for this book.' });
+    }
+
+    const stmt = db.prepare('DELETE FROM books WHERE id = ?');
+    const result = stmt.run(id);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Book not found.' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`[Server] Express API server running on http://localhost:${PORT}`);
 });

@@ -7,6 +7,7 @@ import {
   TrendingUp, Users, BookMarked, Eye, Shield, Star, Printer, X, Plus,
   ArrowRight, Info, Hash, Check, ChevronRight, Quote, GraduationCap,
   ChevronLeft, AlertCircle, Menu, BookX, Library, Filter, Loader2,
+  Edit, Trash,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -173,7 +174,13 @@ function StatCard({ label, value, icon: Icon, color = "green", sub }: { label: s
 }
 
 // ─── Book Card ────────────────────────────────────────────────────────────────
-function BookCard({ book, onPreview, onBorrow }: { book: Book; onPreview: (b: Book) => void; onBorrow: (b: Book) => void }) {
+function BookCard({ book, onPreview, onBorrow, onEdit, onDelete }: {
+  book: Book;
+  onPreview: (b: Book) => void;
+  onBorrow: (b: Book) => void;
+  onEdit: (b: Book) => void;
+  onDelete: (b: Book) => void;
+}) {
   return (
     <div className="bg-white rounded-xl shadow-sm border border-border hover:shadow-md transition-shadow group overflow-hidden">
       <div className="relative h-44 overflow-hidden bg-gray-100">
@@ -189,6 +196,22 @@ function BookCard({ book, onPreview, onBorrow }: { book: Book; onPreview: (b: Bo
         </div>
         <div className="absolute top-2 left-2">
           <Badge variant="default">{book.category}</Badge>
+        </div>
+        <div className="absolute bottom-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => { e.stopPropagation(); onEdit(book); }}
+            className="p-1.5 bg-white hover:bg-gray-100 text-gray-700 rounded-md shadow-sm transition-colors border border-gray-200 cursor-pointer"
+            title="Edit Book"
+          >
+            <Edit className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(book); }}
+            className="p-1.5 bg-white hover:bg-red-50 text-red-600 rounded-md shadow-sm transition-colors border border-gray-200 cursor-pointer"
+            title="Delete Book"
+          >
+            <Trash className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
       <div className="p-4">
@@ -292,7 +315,13 @@ function QRReceiptModal({ txn, book, onClose }: { txn: Omit<Transaction, "id"> &
 }
 
 // ─── Book Preview Modal ───────────────────────────────────────────────────────
-function BookPreviewModal({ book, onClose, onBorrow }: { book: Book; onClose: () => void; onBorrow: (b: Book) => void }) {
+function BookPreviewModal({ book, onClose, onBorrow, onEdit, onDelete }: {
+  book: Book;
+  onClose: () => void;
+  onBorrow: (b: Book) => void;
+  onEdit: (b: Book) => void;
+  onDelete: (b: Book) => void;
+}) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden">
@@ -335,16 +364,28 @@ function BookPreviewModal({ book, onClose, onBorrow }: { book: Book; onClose: ()
           </h3>
           <p className="text-sm text-muted-foreground leading-relaxed mb-6">{book.abstract}</p>
           <div className="flex gap-3">
-            <button onClick={onClose} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors">
+            <button onClick={onClose} className="py-2.5 px-4 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors">
               Close
+            </button>
+            <button
+              onClick={() => { onEdit(book); onClose(); }}
+              className="py-2.5 px-4 border border-[#106A2E] text-[#106A2E] rounded-lg text-sm hover:bg-[#106A2E]/5 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Edit className="w-4 h-4" /> Edit
+            </button>
+            <button
+              onClick={() => { onDelete(book); onClose(); }}
+              className="py-2.5 px-4 border border-red-500 text-red-500 rounded-lg text-sm hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Trash className="w-4 h-4" /> Delete
             </button>
             <button
               onClick={() => { onBorrow(book); onClose(); }}
               disabled={book.available === 0}
-              className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-medium hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="flex-grow py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-medium hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
             >
               <BookMarked className="w-4 h-4" />
-              {book.available > 0 ? "Borrow This Book" : "Currently Unavailable"}
+              {book.available > 0 ? "Borrow" : "Unavailable"}
             </button>
           </div>
         </div>
@@ -756,7 +797,14 @@ function DashboardPage({ books, transactions, reservations, librarianName, onNav
 }
 
 // ─── Catalog Page ─────────────────────────────────────────────────────────────
-function CatalogPage({ books, onBorrow, onPreview }: { books: Book[]; onBorrow: (b: Book) => void; onPreview: (b: Book) => void }) {
+function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
+  books: Book[];
+  onBorrow: (b: Book) => void;
+  onPreview: (b: Book) => void;
+  onAdd: () => void;
+  onEdit: (b: Book) => void;
+  onDelete: (b: Book) => void;
+}) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
 
@@ -768,6 +816,19 @@ function CatalogPage({ books, onBorrow, onPreview }: { books: Book[]; onBorrow: 
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-lg text-foreground">Book Collection</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Manage and search books in the library catalog.</p>
+        </div>
+        <button
+          onClick={onAdd}
+          className="bg-[#106A2E] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-2 shadow cursor-pointer"
+        >
+          <Plus className="w-4 h-4" /> Add Book
+        </button>
+      </div>
+
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -777,7 +838,7 @@ function CatalogPage({ books, onBorrow, onPreview }: { books: Book[]; onBorrow: 
         <div className="flex gap-2 flex-wrap">
           {CATEGORIES.map(c => (
             <button key={c} onClick={() => setCategory(c)}
-              className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors ${category === c ? "bg-[#106A2E] text-white" : "bg-white border border-border text-foreground hover:bg-gray-50"}`}>
+              className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${category === c ? "bg-[#106A2E] text-white" : "bg-white border border-border text-foreground hover:bg-gray-50"}`}>
               {c}
             </button>
           ))}
@@ -785,7 +846,16 @@ function CatalogPage({ books, onBorrow, onPreview }: { books: Book[]; onBorrow: 
       </div>
       <p className="text-xs text-muted-foreground">{filtered.length} book{filtered.length !== 1 ? "s" : ""} found</p>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {filtered.map(book => <BookCard key={book.id} book={book} onPreview={onPreview} onBorrow={onBorrow} />)}
+        {filtered.map(book => (
+          <BookCard
+            key={book.id}
+            book={book}
+            onPreview={onPreview}
+            onBorrow={onBorrow}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        ))}
       </div>
     </div>
   );
@@ -1824,6 +1894,274 @@ function MainLayout({ children, currentPage, librarianName, books, transactions,
   );
 }
 
+// ─── Book Form Modal (Add / Edit) ─────────────────────────────────────────────
+interface BookFormModalProps {
+  book?: Book | null;
+  onClose: () => void;
+  onRefresh: () => void;
+}
+
+function BookFormModal({ book, onClose, onRefresh }: BookFormModalProps) {
+  const [id, setId] = useState(book?.id || "");
+  const [title, setTitle] = useState(book?.title || "");
+  const [author, setAuthor] = useState(book?.author || "");
+  const [isbn, setIsbn] = useState(book?.isbn || "");
+  const [category, setCategory] = useState(book?.category || "Literature");
+  const [cover, setCover] = useState(book?.cover || "");
+  const [abstract, setAbstract] = useState(book?.abstract || "");
+  const [total, setTotal] = useState(book?.total !== undefined ? String(book.total) : "1");
+  const [publishYear, setPublishYear] = useState(book?.publishYear !== undefined ? String(book.publishYear) : "2024");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const isEdit = !!book;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!id || !title || !author || !isbn || !category || !total) {
+      setError("Please fill in all required fields.");
+      return;
+    }
+
+    setLoading(true);
+    const url = isEdit ? `/api/books/${book.id}` : "/api/books";
+    const method = isEdit ? "PUT" : "POST";
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          title,
+          author,
+          isbn,
+          category,
+          cover,
+          abstract,
+          total: parseInt(total, 10),
+          publishYear: publishYear ? parseInt(publishYear, 10) : null
+        })
+      });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        onRefresh();
+        onClose();
+      }
+    } catch (err) {
+      console.error(err);
+      setError("An error occurred while saving the book.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="bg-[#106A2E] p-5 flex items-center justify-between">
+          <h2 className="text-white font-bold flex items-center gap-2">
+            <BookOpen className="w-4 h-4" /> {isEdit ? "Edit Book Details" : "Add New Book"}
+          </h2>
+          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 text-left">
+          {error && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-750 text-xs">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="col-span-1">
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Book ID *</label>
+              <input
+                value={id}
+                onChange={e => setId(e.target.value)}
+                disabled={isEdit}
+                placeholder="e.g. B009"
+                required
+                className="w-full px-3 py-2 bg-gray-50 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E] disabled:opacity-60"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-foreground mb-1.5">ISBN *</label>
+              <input
+                value={isbn}
+                onChange={e => setIsbn(e.target.value)}
+                placeholder="e.g. 978-3-16-148410-0"
+                required
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1.5">Book Title *</label>
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. The Pragmatic Programmer"
+              required
+              className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Author *</label>
+              <input
+                value={author}
+                onChange={e => setAuthor(e.target.value)}
+                placeholder="e.g. Andy Hunt"
+                required
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Category *</label>
+              <select
+                value={category}
+                onChange={e => setCategory(e.target.value)}
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              >
+                {CATEGORIES.filter(c => c !== "All").map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Total Copies *</label>
+              <input
+                type="number"
+                min="1"
+                value={total}
+                onChange={e => setTotal(e.target.value)}
+                required
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Publish Year</label>
+              <input
+                type="number"
+                value={publishYear}
+                onChange={e => setPublishYear(e.target.value)}
+                placeholder="e.g. 1999"
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1.5">Cover Image URL</label>
+            <input
+              value={cover}
+              onChange={e => setCover(e.target.value)}
+              placeholder="e.g. https://images.unsplash.com/..."
+              className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1.5">Abstract / Description</label>
+            <textarea
+              value={abstract}
+              onChange={e => setAbstract(e.target.value)}
+              placeholder="Enter book summary..."
+              rows={3}
+              className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E] resize-none"
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors cursor-pointer">
+              Cancel
+            </button>
+            <button type="submit" disabled={loading} className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2 cursor-pointer">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {isEdit ? "Save Changes" : "Add Book"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Delete Book Modal ────────────────────────────────────────────────────────
+interface DeleteBookModalProps {
+  book: Book;
+  onClose: () => void;
+  onRefresh: () => void;
+}
+
+function DeleteBookModal({ book, onClose, onRefresh }: DeleteBookModalProps) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleDelete() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/books/${book.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        onRefresh();
+        onClose();
+      }
+    } catch (err) {
+      console.error(err);
+      setError("An error occurred while deleting the book.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-left">
+        <div className="bg-red-600 p-5 flex items-center justify-between">
+          <h2 className="text-white font-bold flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-white" /> Delete Book
+          </h2>
+          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          {error ? (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
+              {error}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Are you sure you want to delete <strong>{book.title}</strong> (ID: {book.id})? This action cannot be undone.
+            </p>
+          )}
+
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors cursor-pointer">
+              {error ? "Close" : "Cancel"}
+            </button>
+            {!error && (
+              <button onClick={handleDelete} disabled={loading} className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 cursor-pointer">
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Yes, Delete
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [authPage, setAuthPage] = useState<"login" | "register">("login");
@@ -1833,6 +2171,9 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
   const [previewBook, setPreviewBook] = useState<Book | null>(null);
   const [borrowBook, setBorrowBook] = useState<Book | undefined>(undefined);
+  const [editBook, setEditBook] = useState<Book | null>(null);
+  const [deleteBook, setDeleteBook] = useState<Book | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   // Database States
   const [books, setBooks] = useState<Book[]>([]);
@@ -1906,6 +2247,28 @@ export default function App() {
           book={previewBook}
           onClose={() => setPreviewBook(null)}
           onBorrow={(b) => { handleBorrow(b); setPreviewBook(null); }}
+          onEdit={setEditBook}
+          onDelete={setDeleteBook}
+        />
+      )}
+      {showAddModal && (
+        <BookFormModal
+          onClose={() => setShowAddModal(false)}
+          onRefresh={fetchAllData}
+        />
+      )}
+      {editBook && (
+        <BookFormModal
+          book={editBook}
+          onClose={() => setEditBook(null)}
+          onRefresh={fetchAllData}
+        />
+      )}
+      {deleteBook && (
+        <DeleteBookModal
+          book={deleteBook}
+          onClose={() => setDeleteBook(null)}
+          onRefresh={fetchAllData}
         />
       )}
       <MainLayout 
@@ -1926,7 +2289,16 @@ export default function App() {
             onNavigate={setCurrentPage} 
           />
         )}
-        {currentPage === "catalog" && <CatalogPage books={books} onBorrow={handleBorrow} onPreview={handlePreview} />}
+        {currentPage === "catalog" && (
+          <CatalogPage
+            books={books}
+            onBorrow={handleBorrow}
+            onPreview={handlePreview}
+            onAdd={() => setShowAddModal(true)}
+            onEdit={setEditBook}
+            onDelete={setDeleteBook}
+          />
+        )}
         {currentPage === "borrow" && (
           <BorrowPage
             books={books}
