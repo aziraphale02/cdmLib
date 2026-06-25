@@ -4,14 +4,14 @@ import libraryBrandImg from "@/imports/672249359_1247900927325779_37980222349774
 import {
   BookOpen, LayoutDashboard, Calendar, RotateCcw, FileText, LogOut,
   Search, QrCode, Bell, User, AlertTriangle, CheckCircle, Clock,
-  TrendingUp, Users, BookMarked, Eye, Shield, Star, Printer, X, Plus,
+  TrendingUp, Users, BookMarked, Eye, EyeOff, Shield, Star, Printer, X, Plus,
   ArrowRight, Info, Hash, Check, ChevronRight, Quote, GraduationCap,
   ChevronLeft, AlertCircle, Menu, BookX, Library, Filter, Loader2,
   Edit, Trash,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type Page = "login" | "register" | "dashboard" | "catalog" | "borrow" | "reservations" | "returns" | "terms";
+type Page = "login" | "register" | "dashboard" | "catalog" | "students" | "borrow" | "reservations" | "returns" | "terms";
 
 interface Book {
   id: string;
@@ -49,6 +49,16 @@ interface Reservation {
   reservationDate: string;
   pickupDate: string;
   status: "pending" | "fulfilled" | "cancelled";
+}
+
+interface Student {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  course: string;
+  yearLevel: string;
+  status: "active" | "suspended";
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -400,20 +410,34 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string) => void; on
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (!username || !password) { setError("Please fill in all fields."); return; }
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      if (username === "admin" && password === "admin123") {
-        onLogin("Ana Reyes");
-      } else {
-        setError("Invalid credentials. Try admin / admin123");
+
+    fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password })
+    })
+    .then(r => {
+      if (!r.ok) {
+        return r.json().then(data => { throw new Error(data.error || "Authentication failed"); });
       }
-    }, 900);
+      return r.json();
+    })
+    .then(data => {
+      setLoading(false);
+      localStorage.setItem("librarianName", data.name);
+      onLogin(data.name);
+    })
+    .catch(err => {
+      setLoading(false);
+      setError(err.message);
+    });
   }
 
   return (
@@ -456,11 +480,11 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string) => void; on
             <p className="text-muted-foreground text-sm mt-1">Sign in to your librarian account</p>
           </div>
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-700 text-sm">
+            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-700 text-sm text-left">
               <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
             </div>
           )}
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4 text-left">
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">Username</label>
               <div className="relative">
@@ -477,10 +501,17 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string) => void; on
               <div className="relative">
                 <Shield className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
-                  type="password" value={password} onChange={e => setPassword(e.target.value)}
+                  type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full pl-9 pr-4 py-2.5 bg-white border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E] transition-colors"
+                  className="w-full pl-9 pr-10 py-2.5 bg-white border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E] transition-colors"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
             <div className="flex items-center justify-between text-xs">
@@ -491,7 +522,7 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string) => void; on
             </div>
             <button
               type="submit" disabled={loading}
-              className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-70 flex items-center justify-center gap-2 mt-2"
+              className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-70 flex items-center justify-center gap-2 mt-2 cursor-pointer"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {loading ? "Signing in..." : "Sign In"}
@@ -499,7 +530,7 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string) => void; on
           </form>
           <p className="text-center text-xs text-muted-foreground mt-6">
             New librarian?{" "}
-            <button onClick={onGoRegister} className="text-[#106A2E] font-medium hover:underline">Create an account</button>
+            <button onClick={onGoRegister} className="text-[#106A2E] font-medium hover:underline cursor-pointer">Create an account</button>
           </p>
           <p className="text-center text-xs text-muted-foreground mt-2">
             Demo credentials: <span className="font-mono bg-gray-100 px-1 rounded">admin</span> / <span className="font-mono bg-gray-100 px-1 rounded">admin123</span>
@@ -516,12 +547,35 @@ function RegisterPage({ onBack }: { onBack: () => void }) {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", employeeId: "", role: "Librarian", username: "", password: "", confirmPassword: "" });
   const [done, setDone] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   function update(k: string, v: string) { setForm(f => ({ ...f, [k]: v })); }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setDone(true);
+    if (form.password !== form.confirmPassword) {
+      alert("Passwords do not match.");
+      return;
+    }
+
+    fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form)
+    })
+    .then(r => {
+      if (!r.ok) {
+        return r.json().then(data => { throw new Error(data.error || "Registration failed"); });
+      }
+      return r.json();
+    })
+    .then(() => {
+      setDone(true);
+    })
+    .catch(err => {
+      alert(err.message);
+    });
   }
 
   if (done) {
@@ -532,8 +586,8 @@ function RegisterPage({ onBack }: { onBack: () => void }) {
             <CheckCircle className="w-8 h-8 text-[#106A2E]" />
           </div>
           <h2 className="text-2xl font-bold text-foreground mb-2" style={{ fontFamily: "var(--font-family-display)" }}>Account Created!</h2>
-          <p className="text-muted-foreground text-sm mb-6">Your librarian account has been submitted for approval. You will receive an email confirmation once your account is activated by the administrator.</p>
-          <button onClick={onBack} className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors">
+          <p className="text-muted-foreground text-sm mb-6">Your librarian account has been created successfully. You can now return to the login screen and sign in immediately.</p>
+          <button onClick={onBack} className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer">
             Back to Login
           </button>
         </div>
@@ -544,8 +598,8 @@ function RegisterPage({ onBack }: { onBack: () => void }) {
   return (
     <div className="min-h-screen bg-[#F1F1F1] flex items-center justify-center p-8">
       <div className="bg-white rounded-2xl shadow-sm max-w-lg w-full overflow-hidden">
-        <div className="bg-[#106A2E] p-6">
-          <button onClick={onBack} className="flex items-center gap-2 text-white/70 hover:text-white text-sm mb-4 transition-colors">
+        <div className="bg-[#106A2E] p-6 text-left">
+          <button onClick={onBack} className="flex items-center gap-2 text-white/70 hover:text-white text-sm mb-4 transition-colors cursor-pointer">
             <ChevronLeft className="w-4 h-4" /> Back to Login
           </button>
           <div className="flex items-center gap-3">
@@ -566,7 +620,7 @@ function RegisterPage({ onBack }: { onBack: () => void }) {
             <span className="text-white/60 text-xs ml-2">{step === 1 ? "Personal Info" : "Account Setup"}</span>
           </div>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-left">
           {step === 1 ? (
             <>
               <div className="grid grid-cols-2 gap-3">
@@ -610,7 +664,7 @@ function RegisterPage({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
               <button type="button" onClick={() => setStep(2)}
-                className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2">
+                className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2 cursor-pointer shadow">
                 Next Step <ArrowRight className="w-4 h-4" />
               </button>
             </>
@@ -623,13 +677,23 @@ function RegisterPage({ onBack }: { onBack: () => void }) {
               </div>
               <div>
                 <label className="block text-xs font-medium text-foreground mb-1.5">Password *</label>
-                <input type="password" value={form.password} onChange={e => update("password", e.target.value)} required
-                  className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]" />
+                <div className="relative">
+                  <input type={showPassword ? "text" : "password"} value={form.password} onChange={e => update("password", e.target.value)} required
+                    className="w-full pl-3 pr-10 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer">
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-foreground mb-1.5">Confirm Password *</label>
-                <input type="password" value={form.confirmPassword} onChange={e => update("confirmPassword", e.target.value)} required
-                  className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]" />
+                <div className="relative">
+                  <input type={showConfirmPassword ? "text" : "password"} value={form.confirmPassword} onChange={e => update("confirmPassword", e.target.value)} required
+                    className="w-full pl-3 pr-10 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]" />
+                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer">
+                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               <div className="bg-[#F4D35E]/10 border border-[#F4D35E] rounded-lg p-3 text-xs text-[#7a6500]">
                 <Shield className="w-3.5 h-3.5 inline mr-1" />
@@ -637,11 +701,11 @@ function RegisterPage({ onBack }: { onBack: () => void }) {
               </div>
               <div className="flex gap-3">
                 <button type="button" onClick={() => setStep(1)}
-                  className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+                  className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 cursor-pointer">
                   <ChevronLeft className="w-4 h-4" /> Back
                 </button>
                 <button type="submit"
-                  className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors">
+                  className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer">
                   Create Account
                 </button>
               </div>
@@ -862,8 +926,8 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
 }
 
 // ─── Borrow Page ──────────────────────────────────────────────────────────────
-function BorrowPage({ books, librarianName, preselectedBook, onDone, onRefresh }: {
-  books: Book[]; librarianName: string; preselectedBook?: Book; onDone: () => void; onRefresh: () => void;
+function BorrowPage({ books, students, librarianName, preselectedBook, onDone, onRefresh }: {
+  books: Book[]; students: Student[]; librarianName: string; preselectedBook?: Book; onDone: () => void; onRefresh: () => void;
 }) {
   const [step, setStep] = useState(preselectedBook ? 2 : 1);
   const [selectedBook, setSelectedBook] = useState<Book | undefined>(preselectedBook);
@@ -872,6 +936,64 @@ function BorrowPage({ books, librarianName, preselectedBook, onDone, onRefresh }
   const [studentId, setStudentId] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [completedTxn, setCompletedTxn] = useState<Transaction | null>(null);
+
+  // Student Search Dropdown States
+  const [selectedStudent, setSelectedStudent] = useState<Student | undefined>();
+  const [studentSearch, setStudentSearch] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Quick Register States
+  const [showQuickRegister, setShowQuickRegister] = useState(false);
+  const [quickId, setQuickId] = useState("");
+  const [quickName, setQuickName] = useState("");
+  const [quickEmail, setQuickEmail] = useState("");
+  const [quickCourse, setQuickCourse] = useState("BSIT");
+  const [quickYearLevel, setQuickYearLevel] = useState("1st Year");
+
+  function handleQuickRegister() {
+    if (!quickId || !quickName || !quickEmail) {
+      alert("Please fill in Student ID, Name, and Email.");
+      return;
+    }
+    fetch("/api/students", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: quickId,
+        name: quickName,
+        email: quickEmail,
+        course: quickCourse,
+        yearLevel: quickYearLevel,
+        status: "active"
+      })
+    })
+    .then(r => r.json())
+    .then(res => {
+      if (res.error) {
+        alert(res.error);
+      } else {
+        const newStudent: Student = {
+          id: quickId,
+          name: quickName,
+          email: quickEmail,
+          phone: "",
+          course: quickCourse,
+          yearLevel: quickYearLevel,
+          status: "active"
+        };
+        onRefresh();
+        setSelectedStudent(newStudent);
+        setStudentSearch(`${newStudent.name} (${newStudent.id})`);
+        setStudentName(newStudent.name);
+        setStudentId(newStudent.id);
+        setShowQuickRegister(false);
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      alert("Failed to register student.");
+    });
+  }
 
   const filteredBooks = books.filter(b => b.available > 0 && (!search || b.title.toLowerCase().includes(search.toLowerCase()) || b.author.toLowerCase().includes(search.toLowerCase())));
   const today = new Date().toISOString().split("T")[0];
@@ -910,7 +1032,7 @@ function BorrowPage({ books, librarianName, preselectedBook, onDone, onRefresh }
   if (step === 4 && completedTxn && selectedBook) {
     return (
       <div className="max-w-lg mx-auto">
-        <div className="bg-white rounded-xl shadow-sm border border-border overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-border overflow-hidden text-left">
           <div className="bg-[#106A2E] p-6 text-center">
             <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3">
               <CheckCircle className="w-8 h-8 text-[#F4D35E]" />
@@ -922,7 +1044,7 @@ function BorrowPage({ books, librarianName, preselectedBook, onDone, onRefresh }
             <QRCodeVisual data={completedTxn.id} />
             <p className="text-xs text-muted-foreground mt-3 mb-5">Scan QR code to view receipt details</p>
             <div className="w-full space-y-2 text-sm mb-6">
-              {[
+              {[ 
                 ["Receipt No.", completedTxn.id],
                 ["Book", selectedBook.title],
                 ["Borrower", studentName],
@@ -936,10 +1058,10 @@ function BorrowPage({ books, librarianName, preselectedBook, onDone, onRefresh }
               ))}
             </div>
             <div className="flex gap-3 w-full">
-              <button className="flex-1 py-2.5 border border-[#106A2E] text-[#106A2E] rounded-lg text-sm font-medium hover:bg-[#106A2E]/5 transition-colors flex items-center justify-center gap-2">
+              <button className="flex-1 py-2.5 border border-[#106A2E] text-[#106A2E] rounded-lg text-sm font-medium hover:bg-[#106A2E]/5 transition-colors flex items-center justify-center gap-2 cursor-pointer">
                 <Printer className="w-4 h-4" /> Print
               </button>
-              <button onClick={onDone} className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors">
+              <button onClick={onDone} className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer">
                 Done
               </button>
             </div>
@@ -950,7 +1072,7 @@ function BorrowPage({ books, librarianName, preselectedBook, onDone, onRefresh }
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5">
+    <div className="max-w-2xl mx-auto space-y-5 text-left">
       {/* Progress */}
       <div className="bg-white rounded-xl shadow-sm border border-border p-5">
         <div className="flex items-center gap-0">
@@ -1000,7 +1122,7 @@ function BorrowPage({ books, librarianName, preselectedBook, onDone, onRefresh }
             )}
           </div>
           <button disabled={!selectedBook} onClick={() => setStep(2)}
-            className="mt-4 w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+            className="mt-4 w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer">
             Continue <ArrowRight className="w-4 h-4" />
           </button>
         </div>
@@ -1012,16 +1134,73 @@ function BorrowPage({ books, librarianName, preselectedBook, onDone, onRefresh }
           <h2 className="font-bold text-foreground mb-1 flex items-center gap-2"><GraduationCap className="w-4 h-4 text-[#106A2E]" />Student Information</h2>
           <p className="text-xs text-muted-foreground mb-4">Borrowing: <span className="font-medium text-foreground">{selectedBook.title}</span></p>
           <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-foreground mb-1.5">Full Name *</label>
-              <input value={studentName} onChange={e => setStudentName(e.target.value)} placeholder="e.g. Maria Santos"
-                className="w-full px-3 py-2.5 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]" />
+            <div className="relative">
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Search & Select Student *</label>
+              <div className="relative">
+                <input
+                  value={studentSearch}
+                  onChange={e => {
+                    setStudentSearch(e.target.value);
+                    setShowDropdown(true);
+                  }}
+                  onFocus={() => setShowDropdown(true)}
+                  placeholder="Type student name or ID..."
+                  className="w-full pl-3 pr-9 py-2.5 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                />
+                <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              </div>
+
+              {showDropdown && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowDropdown(false)} />
+                  <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-border rounded-lg shadow-lg z-20 divide-y divide-border">
+                    {students
+                      .filter(s =>
+                        s.status === "active" &&
+                        (s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                          s.id.includes(studentSearch))
+                      )
+                      .map(s => (
+                        <div
+                          key={s.id}
+                          onClick={() => {
+                            setSelectedStudent(s);
+                            setStudentSearch(`${s.name} (${s.id})`);
+                            setStudentName(s.name);
+                            setStudentId(s.id);
+                            setShowDropdown(false);
+                          }}
+                          className="p-2.5 hover:bg-emerald-50/40 cursor-pointer text-xs transition-colors flex justify-between items-center"
+                        >
+                          <div>
+                            <p className="font-semibold text-foreground text-left">{s.name}</p>
+                            <p className="text-muted-foreground text-[10px] text-left">{s.course} · {s.yearLevel}</p>
+                          </div>
+                          <span className="font-mono text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded text-[10px]">{s.id}</span>
+                        </div>
+                      ))}
+                    {students.filter(s => s.status === "active" && (s.name.toLowerCase().includes(studentSearch.toLowerCase()) || s.id.includes(studentSearch))).length === 0 && (
+                      <div className="p-3 text-center text-xs text-muted-foreground">
+                        No active students found.
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-            <div>
-              <label className="block text-xs font-medium text-foreground mb-1.5">Student ID *</label>
-              <input value={studentId} onChange={e => setStudentId(e.target.value)} placeholder="e.g. 2024-0001"
-                className="w-full px-3 py-2.5 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]" />
-            </div>
+
+            {selectedStudent && (
+              <div className="p-3.5 bg-emerald-50/30 border border-emerald-100 rounded-lg space-y-1.5 text-xs text-left">
+                <p className="font-bold text-[#106A2E] flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5" />Student linked successfully</p>
+                <div className="grid grid-cols-2 gap-2 text-muted-foreground mt-2">
+                  <div>Name: <span className="font-semibold text-foreground">{selectedStudent.name}</span></div>
+                  <div>Student ID: <span className="font-mono font-semibold text-foreground">{selectedStudent.id}</span></div>
+                  <div>Email: <span className="font-semibold text-foreground">{selectedStudent.email}</span></div>
+                  <div>Course/Year: <span className="font-semibold text-foreground">{selectedStudent.course} — {selectedStudent.yearLevel}</span></div>
+                </div>
+              </div>
+            )}
+
             <div className="bg-[#F1F1F1] rounded-lg p-3 space-y-1.5 text-xs">
               <div className="flex justify-between"><span className="text-muted-foreground">Borrow Date</span><span className="font-medium">{formatDate(today)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Due Date</span><span className="font-bold text-[#106A2E]">{formatDate(dueDate)}</span></div>
@@ -1029,11 +1208,11 @@ function BorrowPage({ books, librarianName, preselectedBook, onDone, onRefresh }
             </div>
           </div>
           <div className="flex gap-3 mt-5">
-            <button onClick={() => setStep(1)} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+            <button onClick={() => setStep(1)} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 cursor-pointer">
               <ChevronLeft className="w-4 h-4" /> Back
             </button>
             <button disabled={!studentName || !studentId} onClick={() => setStep(3)}
-              className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+              className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer">
               Continue <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -1070,11 +1249,11 @@ function BorrowPage({ books, librarianName, preselectedBook, onDone, onRefresh }
             </span>
           </label>
           <div className="flex gap-3">
-            <button onClick={() => setStep(2)} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
+            <button onClick={() => setStep(2)} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors flex items-center justify-center gap-2 cursor-pointer">
               <ChevronLeft className="w-4 h-4" /> Back
             </button>
             <button disabled={!termsAccepted} onClick={handleConfirm}
-              className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+              className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer">
               <Check className="w-4 h-4" /> Confirm Borrow
             </button>
           </div>
@@ -1085,7 +1264,7 @@ function BorrowPage({ books, librarianName, preselectedBook, onDone, onRefresh }
 }
 
 // ─── Reservations Page ────────────────────────────────────────────────────────
-function ReservationsPage({ books, reservations, onRefresh }: { books: Book[]; reservations: Reservation[]; onRefresh: () => void }) {
+function ReservationsPage({ books, reservations, students, onRefresh }: { books: Book[]; reservations: Reservation[]; students: Student[]; onRefresh: () => void }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedBook, setSelectedBook] = useState<Book | undefined>();
   const [studentName, setStudentName] = useState("");
@@ -1094,6 +1273,64 @@ function ReservationsPage({ books, reservations, onRefresh }: { books: Book[]; r
   const [done, setDone] = useState(false);
   const tomorrow = getTomorrowDate();
   const availableBooks = books;
+
+  // Student Search Dropdown States
+  const [selectedStudent, setSelectedStudent] = useState<Student | undefined>();
+  const [studentSearch, setStudentSearch] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Quick Register States
+  const [showQuickRegister, setShowQuickRegister] = useState(false);
+  const [quickId, setQuickId] = useState("");
+  const [quickName, setQuickName] = useState("");
+  const [quickEmail, setQuickEmail] = useState("");
+  const [quickCourse, setQuickCourse] = useState("BSIT");
+  const [quickYearLevel, setQuickYearLevel] = useState("1st Year");
+
+  function handleQuickRegister() {
+    if (!quickId || !quickName || !quickEmail) {
+      alert("Please fill in Student ID, Name, and Email.");
+      return;
+    }
+    fetch("/api/students", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: quickId,
+        name: quickName,
+        email: quickEmail,
+        course: quickCourse,
+        yearLevel: quickYearLevel,
+        status: "active"
+      })
+    })
+    .then(r => r.json())
+    .then(res => {
+      if (res.error) {
+        alert(res.error);
+      } else {
+        const newStudent: Student = {
+          id: quickId,
+          name: quickName,
+          email: quickEmail,
+          phone: "",
+          course: quickCourse,
+          yearLevel: quickYearLevel,
+          status: "active"
+        };
+        onRefresh();
+        setSelectedStudent(newStudent);
+        setStudentSearch(`${newStudent.name} (${newStudent.id})`);
+        setStudentName(newStudent.name);
+        setStudentId(newStudent.id);
+        setShowQuickRegister(false);
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      alert("Failed to register student.");
+    });
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1129,17 +1366,17 @@ function ReservationsPage({ books, reservations, onRefresh }: { books: Book[]; r
     <div className="space-y-5">
       {!showForm ? (
         <>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between text-left">
             <div>
               <h2 className="font-bold text-lg text-foreground">Book Reservations</h2>
               <p className="text-xs text-muted-foreground mt-0.5">Reservations can only be made 1 day in advance and are held for 1 day.</p>
             </div>
-            <button onClick={() => { setShowForm(true); setDone(false); }} className="bg-[#106A2E] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-2">
+            <button onClick={() => { setShowForm(true); setDone(false); setSelectedStudent(undefined); setStudentSearch(""); setStudentName(""); setStudentId(""); }} className="bg-[#106A2E] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-2 cursor-pointer shadow">
               <Plus className="w-4 h-4" /> New Reservation
             </button>
           </div>
 
-          <div className="bg-[#F4D35E]/10 border border-[#F4D35E] rounded-xl p-4 flex items-start gap-3">
+          <div className="bg-[#F4D35E]/10 border border-[#F4D35E] rounded-xl p-4 flex items-start gap-3 text-left">
             <Info className="w-4 h-4 text-[#7a6500] mt-0.5 flex-shrink-0" />
             <div className="text-xs text-[#7a6500] space-y-1">
               <p className="font-semibold">Reservation Policy</p>
@@ -1149,7 +1386,7 @@ function ReservationsPage({ books, reservations, onRefresh }: { books: Book[]; r
             </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-sm border border-border overflow-hidden">
+          <div className="bg-white rounded-xl shadow-sm border border-border overflow-hidden text-left">
             <div className="p-4 border-b border-border flex items-center justify-between">
               <h3 className="font-semibold text-sm text-foreground">Reservation Records</h3>
               <Badge variant="accent">{reservations.length} Total</Badge>
@@ -1190,7 +1427,7 @@ function ReservationsPage({ books, reservations, onRefresh }: { books: Book[]; r
           </div>
         </>
       ) : (
-        <div className="max-w-lg mx-auto">
+        <div className="max-w-lg mx-auto text-left">
           {done ? (
             <div className="bg-white rounded-xl shadow-sm border border-border p-8 text-center">
               <div className="w-14 h-14 bg-[#106A2E]/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1204,8 +1441,8 @@ function ReservationsPage({ books, reservations, onRefresh }: { books: Book[]; r
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 mb-6">
                 The student must pick up the book by end of {formatDate(tomorrow)}. The reservation will be cancelled if not claimed.
               </div>
-              <button onClick={() => { setShowForm(false); setSelectedBook(undefined); setStudentName(""); setStudentId(""); }}
-                className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors">
+              <button onClick={() => { setShowForm(false); setSelectedBook(undefined); setStudentName(""); setStudentId(""); setSelectedStudent(undefined); setStudentSearch(""); }}
+                className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer">
                 Back to Reservations
               </button>
             </div>
@@ -1221,28 +1458,177 @@ function ReservationsPage({ books, reservations, onRefresh }: { books: Book[]; r
                   This reservation is for tomorrow: <strong>{formatDate(tomorrow)}</strong>. Students must pick up on this date.
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-foreground mb-1.5">Select Book *</label>
+                  <label className="block text-xs font-semibold text-foreground mb-1.5">Select Book *</label>
                   <select value={selectedBook?.id || ""} onChange={e => setSelectedBook(books.find(b => b.id === e.target.value))} required
                     className="w-full px-3 py-2.5 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]">
                     <option value="">Choose a book...</option>
                     {availableBooks.map(b => <option key={b.id} value={b.id}>{b.title} — {b.author}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-foreground mb-1.5">Student Full Name *</label>
-                  <input value={studentName} onChange={e => setStudentName(e.target.value)} required placeholder="e.g. Maria Santos"
-                    className="w-full px-3 py-2.5 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]" />
+                
+                <div className="relative">
+                  <label className="block text-xs font-semibold text-foreground mb-1.5">Search & Select Student *</label>
+                  <div className="relative">
+                    <input
+                      value={studentSearch}
+                      onChange={e => {
+                        setStudentSearch(e.target.value);
+                        setShowDropdown(true);
+                      }}
+                      onFocus={() => setShowDropdown(true)}
+                      placeholder="Type student name or ID..."
+                      className="w-full pl-3 pr-9 py-2.5 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                    />
+                    <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  </div>
+
+                  {showDropdown && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowDropdown(false)} />
+                      <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-border rounded-lg shadow-lg z-20 divide-y divide-border">
+                        {students
+                          .filter(s =>
+                            s.status === "active" &&
+                            (s.name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                              s.id.includes(studentSearch))
+                          )
+                          .map(s => (
+                            <div
+                              key={s.id}
+                              onClick={() => {
+                                setSelectedStudent(s);
+                                setStudentSearch(`${s.name} (${s.id})`);
+                                setStudentName(s.name);
+                                setStudentId(s.id);
+                                setShowDropdown(false);
+                              }}
+                              className="p-2.5 hover:bg-emerald-50/40 cursor-pointer text-xs transition-colors flex justify-between items-center"
+                            >
+                              <div>
+                                <p className="font-semibold text-foreground text-left">{s.name}</p>
+                                <p className="text-muted-foreground text-[10px] text-left">{s.course} · {s.yearLevel}</p>
+                              </div>
+                              <span className="font-mono text-muted-foreground bg-gray-50 px-1.5 py-0.5 rounded text-[10px]">{s.id}</span>
+                            </div>
+                          ))}
+                        {students.filter(s => s.status === "active" && (s.name.toLowerCase().includes(studentSearch.toLowerCase()) || s.id.includes(studentSearch))).length === 0 && (
+                          <div className="p-3 text-center text-xs text-muted-foreground">
+                            No active students found.
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-foreground mb-1.5">Student ID *</label>
-                  <input value={studentId} onChange={e => setStudentId(e.target.value)} required placeholder="e.g. 2024-0001"
-                    className="w-full px-3 py-2.5 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]" />
-                </div>
+
+                {showQuickRegister ? (
+                  <div className="p-4 bg-gray-50 border border-dashed border-border rounded-xl space-y-3 mt-3 text-left">
+                    <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+                      <span className="text-xs font-bold text-[#106A2E] flex items-center gap-1.5"><Plus className="w-3.5 h-3.5" />Quick Register Student</span>
+                      <button type="button" onClick={() => { setShowQuickRegister(false); }} className="text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-foreground mb-1">Student ID *</label>
+                        <input
+                          value={quickId}
+                          onChange={e => {
+                            setQuickId(e.target.value);
+                            setQuickEmail(e.target.value ? `${e.target.value.replace(/\s+/g, "")}@cdm.edu.ph` : "");
+                          }}
+                          placeholder="e.g. 2024-1111"
+                          className="w-full px-2 py-1.5 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-foreground mb-1">Full Name *</label>
+                        <input
+                          value={quickName}
+                          onChange={e => setQuickName(e.target.value)}
+                          placeholder="e.g. Juan dela Cruz"
+                          className="w-full px-2 py-1.5 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-foreground mb-1">Email Address *</label>
+                        <input
+                          value={quickEmail}
+                          onChange={e => setQuickEmail(e.target.value)}
+                          placeholder="e.g. 2024-1111@cdm.edu.ph"
+                          className="w-full px-2 py-1.5 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-semibold text-foreground mb-1">Course</label>
+                          <select value={quickCourse} onChange={e => setQuickCourse(e.target.value)} className="w-full px-2 py-1.5 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]">
+                            <option value="BSIT">BSIT</option>
+                            <option value="BSBA">BSBA</option>
+                            <option value="BSEd">BSEd</option>
+                            <option value="BSCE">BSCE</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-semibold text-foreground mb-1">Year</label>
+                          <select value={quickYearLevel} onChange={e => setQuickYearLevel(e.target.value)} className="w-full px-2 py-1.5 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]">
+                            <option value="1st Year">1st Year</option>
+                            <option value="2nd Year">2nd Year</option>
+                            <option value="3rd Year">3rd Year</option>
+                            <option value="4th Year">4th Year</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleQuickRegister}
+                      className="w-full py-1.5 bg-[#106A2E] text-white text-xs font-semibold rounded-lg hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" /> Register & Link Student
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-right mt-1.5 text-left">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowQuickRegister(true);
+                        if (studentSearch.includes("-") || /^\d+$/.test(studentSearch)) {
+                          setQuickId(studentSearch);
+                          setQuickEmail(`${studentSearch.replace(/\s+/g, "")}@cdm.edu.ph`);
+                          setQuickName("");
+                        } else {
+                          setQuickName(studentSearch);
+                          setQuickId("");
+                          setQuickEmail("");
+                        }
+                      }}
+                      className="text-xs text-[#106A2E] hover:underline font-semibold flex items-center gap-1 ml-auto cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" /> Quick Register a new student
+                    </button>
+                  </div>
+                )}
+
+                {selectedStudent && (
+                  <div className="p-3.5 bg-emerald-50/30 border border-emerald-100 rounded-lg space-y-1.5 text-xs text-left">
+                    <p className="font-bold text-[#106A2E] flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5" />Student linked successfully</p>
+                    <div className="grid grid-cols-2 gap-2 text-muted-foreground mt-2">
+                      <div>Name: <span className="font-semibold text-foreground">{selectedStudent.name}</span></div>
+                      <div>Student ID: <span className="font-mono font-semibold text-foreground">{selectedStudent.id}</span></div>
+                      <div>Email: <span className="font-semibold text-foreground">{selectedStudent.email}</span></div>
+                      <div>Course/Year: <span className="font-semibold text-foreground">{selectedStudent.course} — {selectedStudent.yearLevel}</span></div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-3">
-                  <button type="button" onClick={() => setShowForm(false)} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors">
+                  <button type="button" onClick={() => { setShowForm(false); setSelectedStudent(undefined); setStudentSearch(""); setStudentName(""); setStudentId(""); }} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors cursor-pointer">
                     Cancel
                   </button>
-                  <button type="submit" className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors">
+                  <button type="submit" disabled={!studentName || !studentId || !selectedBook} className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
                     Confirm Reservation
                   </button>
                 </div>
@@ -1584,6 +1970,7 @@ function TermsPage() {
 const NAV_ITEMS = [
   { id: "dashboard" as Page, label: "Dashboard", icon: LayoutDashboard },
   { id: "catalog" as Page, label: "Book Catalog", icon: BookOpen },
+  { id: "students" as Page, label: "Student Directory", icon: Users },
   { id: "borrow" as Page, label: "Borrow Book", icon: BookMarked },
   { id: "reservations" as Page, label: "Reservations", icon: Calendar },
   { id: "returns" as Page, label: "Return Books", icon: RotateCcw },
@@ -1744,7 +2131,7 @@ function MainLayout({ children, currentPage, librarianName, books, transactions,
 
   const titles: Record<Page, string> = {
     login: "Login", register: "Register", dashboard: "Dashboard", catalog: "Book Catalog",
-    borrow: "Borrow Book", reservations: "Reservations", returns: "Return Books", terms: "Terms & Conditions",
+    students: "Student Directory", borrow: "Borrow Book", reservations: "Reservations", returns: "Return Books", terms: "Terms & Conditions",
   };
 
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -2162,6 +2549,386 @@ function DeleteBookModal({ book, onClose, onRefresh }: DeleteBookModalProps) {
   );
 }
 
+// ─── Students Page ────────────────────────────────────────────────────────────
+function StudentsPage({
+  students,
+  onAdd,
+  onEdit,
+  onDelete,
+}: {
+  students: Student[];
+  onAdd: () => void;
+  onEdit: (s: Student) => void;
+  onDelete: (s: Student) => void;
+}) {
+  const [search, setSearch] = useState("");
+
+  const filtered = students.filter(
+    (s) =>
+      !search ||
+      s.name.toLowerCase().includes(search.toLowerCase()) ||
+      s.id.includes(search)
+  );
+
+  return (
+    <div className="space-y-5 text-left">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-lg text-foreground">Student Directory</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Manage registered students, their status, and academic info.
+          </p>
+        </div>
+        <button
+          onClick={onAdd}
+          className="bg-[#106A2E] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-2 shadow cursor-pointer"
+        >
+          <Plus className="w-4 h-4" /> Register Student
+        </button>
+      </div>
+
+      <div className="relative">
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search students by name or Student ID..."
+          className="w-full pl-9 pr-4 py-2.5 bg-white border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+        />
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        {filtered.length} student{filtered.length !== 1 ? "s" : ""} found
+      </p>
+
+      <div className="bg-white rounded-xl shadow-sm border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-border text-xs text-muted-foreground">
+                <th className="text-left p-3 font-medium">Student ID</th>
+                <th className="text-left p-3 font-medium">Name</th>
+                <th className="text-left p-3 font-medium">Course & Year</th>
+                <th className="text-left p-3 font-medium">Email</th>
+                <th className="text-left p-3 font-medium">Phone</th>
+                <th className="text-left p-3 font-medium">Status</th>
+                <th className="text-right p-3 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((s) => (
+                <tr
+                  key={s.id}
+                  className="border-b border-border last:border-0 hover:bg-gray-50 transition-colors"
+                >
+                  <td className="p-3 font-mono text-xs font-semibold text-foreground">
+                    {s.id}
+                  </td>
+                  <td className="p-3 font-semibold text-foreground">{s.name}</td>
+                  <td className="p-3 text-muted-foreground text-xs">
+                    {s.course} · {s.yearLevel}
+                  </td>
+                  <td className="p-3 text-muted-foreground text-xs">{s.email}</td>
+                  <td className="p-3 text-muted-foreground text-xs">
+                    {s.phone || "—"}
+                  </td>
+                  <td className="p-3">
+                    <Badge variant={s.status === "active" ? "success" : "danger"}>
+                      {s.status.charAt(0).toUpperCase() + s.status.slice(1)}
+                    </Badge>
+                  </td>
+                  <td className="p-3 text-right">
+                    <div className="flex justify-end gap-1.5">
+                      <button
+                        onClick={() => onEdit(s)}
+                        className="p-1.5 hover:bg-gray-100 text-gray-700 rounded transition-colors border border-transparent hover:border-gray-200 cursor-pointer"
+                        title="Edit Student"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => onDelete(s)}
+                        className="p-1.5 hover:bg-red-50 text-red-600 rounded transition-colors border border-transparent hover:border-red-100 cursor-pointer"
+                        title="Delete Student"
+                      >
+                        <Trash className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center py-8 text-muted-foreground text-sm">
+                    No students found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Student Form Modal (Register / Edit) ───────────────────────────────────
+interface StudentFormModalProps {
+  student?: Student | null;
+  onClose: () => void;
+  onRefresh: () => void;
+}
+
+function StudentFormModal({ student, onClose, onRefresh }: StudentFormModalProps) {
+  const [id, setId] = useState(student?.id || "");
+  const [name, setName] = useState(student?.name || "");
+  const [email, setEmail] = useState(student?.email || "");
+  const [phone, setPhone] = useState(student?.phone || "");
+  const [course, setCourse] = useState(student?.course || "BSIT");
+  const [yearLevel, setYearLevel] = useState(student?.yearLevel || "1st Year");
+  const [status, setStatus] = useState<"active" | "suspended">(student?.status || "active");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const isEdit = !!student;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!id || !name || !email) {
+      setError("Please fill in all required fields.");
+      return;
+    }
+
+    setLoading(true);
+    const url = isEdit ? `/api/students/${student.id}` : "/api/students";
+    const method = isEdit ? "PUT" : "POST";
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id,
+          name,
+          email,
+          phone,
+          course,
+          yearLevel,
+          status,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        onRefresh();
+        onClose();
+      }
+    } catch (err) {
+      console.error(err);
+      setError("An error occurred while saving the student record.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="bg-[#106A2E] p-5 flex items-center justify-between">
+          <h2 className="text-white font-bold flex items-center gap-2">
+            <GraduationCap className="w-4 h-4" /> {isEdit ? "Edit Student Details" : "Register Student"}
+          </h2>
+          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 text-left">
+          {error && (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-750 text-xs">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Student ID *</label>
+              <input
+                value={id}
+                onChange={e => setId(e.target.value)}
+                disabled={isEdit}
+                placeholder="e.g. 2024-0001"
+                required
+                className="w-full px-3 py-2 bg-gray-50 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E] disabled:opacity-60"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Full Name *</label>
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. Juan dela Cruz"
+                required
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Email Address *</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="e.g. juan@cdm.edu.ph"
+                required
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Phone Number</label>
+              <input
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                placeholder="e.g. 09123456789"
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Course</label>
+              <select
+                value={course}
+                onChange={e => setCourse(e.target.value)}
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              >
+                <option value="BSIT">BSIT</option>
+                <option value="BSBA">BSBA</option>
+                <option value="BSEd">BSEd</option>
+                <option value="BSCE">BSCE</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Year Level</label>
+              <select
+                value={yearLevel}
+                onChange={e => setYearLevel(e.target.value)}
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              >
+                <option value="1st Year">1st Year</option>
+                <option value="2nd Year">2nd Year</option>
+                <option value="3rd Year">3rd Year</option>
+                <option value="4th Year">4th Year</option>
+              </select>
+            </div>
+          </div>
+
+          {isEdit && (
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Account Status</label>
+              <select
+                value={status}
+                onChange={e => setStatus(e.target.value as "active" | "suspended")}
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              >
+                <option value="active">Active</option>
+                <option value="suspended">Suspended</option>
+              </select>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {isEdit ? "Save Changes" : "Register Student"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Delete Student Modal ───────────────────────────────────────────────────
+interface DeleteStudentModalProps {
+  student: Student;
+  onClose: () => void;
+  onRefresh: () => void;
+}
+
+function DeleteStudentModal({ student, onClose, onRefresh }: DeleteStudentModalProps) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleDelete() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/students/${student.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        onRefresh();
+        onClose();
+      }
+    } catch (err) {
+      console.error(err);
+      setError("An error occurred while deleting the student record.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-left">
+        <div className="bg-red-600 p-5 flex items-center justify-between">
+          <h2 className="text-white font-bold flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-white" /> Delete Student Record
+          </h2>
+          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          {error ? (
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">
+              {error}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Are you sure you want to delete student <strong>{student.name}</strong> (ID: {student.id})? This action cannot be undone and will remove all enrollment info from library records.
+            </p>
+          )}
+
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors cursor-pointer">
+              {error ? "Close" : "Cancel"}
+            </button>
+            {!error && (
+              <button onClick={handleDelete} disabled={loading} className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 cursor-pointer">
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Yes, Delete
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [authPage, setAuthPage] = useState<"login" | "register">("login");
@@ -2175,6 +2942,12 @@ export default function App() {
   const [deleteBook, setDeleteBook] = useState<Book | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
 
+  // Student Directory States
+  const [students, setStudents] = useState<Student[]>([]);
+  const [editStudent, setEditStudent] = useState<Student | null>(null);
+  const [deleteStudent, setDeleteStudent] = useState<Student | null>(null);
+  const [showAddStudentModal, setShowAddStudentModal] = useState(false);
+
   // Database States
   const [books, setBooks] = useState<Book[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -2183,14 +2956,16 @@ export default function App() {
 
   async function fetchAllData() {
     try {
-      const [resBooks, resTxns, resReservations] = await Promise.all([
+      const [resBooks, resTxns, resReservations, resStudents] = await Promise.all([
         fetch("/api/books").then(r => r.json()),
         fetch("/api/transactions").then(r => r.json()),
-        fetch("/api/reservations").then(r => r.json())
+        fetch("/api/reservations").then(r => r.json()),
+        fetch("/api/students").then(r => r.json())
       ]);
       setBooks(resBooks);
       setTransactions(resTxns);
       setReservations(resReservations);
+      setStudents(resStudents);
     } catch (err) {
       console.error("Error fetching data:", err);
     } finally {
@@ -2271,6 +3046,26 @@ export default function App() {
           onRefresh={fetchAllData}
         />
       )}
+      {showAddStudentModal && (
+        <StudentFormModal
+          onClose={() => setShowAddStudentModal(false)}
+          onRefresh={fetchAllData}
+        />
+      )}
+      {editStudent && (
+        <StudentFormModal
+          student={editStudent}
+          onClose={() => setEditStudent(null)}
+          onRefresh={fetchAllData}
+        />
+      )}
+      {deleteStudent && (
+        <DeleteStudentModal
+          student={deleteStudent}
+          onClose={() => setDeleteStudent(null)}
+          onRefresh={fetchAllData}
+        />
+      )}
       <MainLayout 
         currentPage={currentPage} 
         librarianName={librarianName} 
@@ -2299,9 +3094,18 @@ export default function App() {
             onDelete={setDeleteBook}
           />
         )}
+        {currentPage === "students" && (
+          <StudentsPage
+            students={students}
+            onAdd={() => setShowAddStudentModal(true)}
+            onEdit={setEditStudent}
+            onDelete={setDeleteStudent}
+          />
+        )}
         {currentPage === "borrow" && (
           <BorrowPage
             books={books}
+            students={students}
             librarianName={librarianName}
             preselectedBook={borrowBook}
             onDone={() => { setBorrowBook(undefined); setCurrentPage("dashboard"); }}
@@ -2312,6 +3116,7 @@ export default function App() {
           <ReservationsPage 
             books={books}
             reservations={reservations}
+            students={students}
             onRefresh={fetchAllData}
           />
         )}

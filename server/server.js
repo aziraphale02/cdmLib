@@ -83,12 +83,21 @@ app.post('/api/auth/register', (req, res) => {
   try {
     const stmt = db.prepare(`
       INSERT INTO librarians (first_name, last_name, email, phone, employee_id, role, username, password, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
     `);
     stmt.run(firstName, lastName, email, phone, employeeId, role, username, password);
     res.status(201).json({ success: true });
   } catch (err) {
     if (err.message.includes('UNIQUE')) {
+      if (err.message.includes('librarians.username')) {
+        return res.status(400).json({ error: 'Username is already registered.' });
+      }
+      if (err.message.includes('librarians.email')) {
+        return res.status(400).json({ error: 'Email address is already registered.' });
+      }
+      if (err.message.includes('librarians.employee_id')) {
+        return res.status(400).json({ error: 'Employee ID is already registered.' });
+      }
       return res.status(400).json({ error: 'Username, Email, or Employee ID already registered.' });
     }
     res.status(500).json({ error: err.message });
@@ -311,6 +320,97 @@ app.delete('/api/books/:id', (req, res) => {
     const result = stmt.run(id);
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Book not found.' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Student CRUD API ────────────────────────────────────────────────────────
+app.get('/api/students', (req, res) => {
+  try {
+    const students = db.prepare('SELECT * FROM students').all();
+    // Map column year_level to yearLevel for camelCase alignment in frontend
+    res.json(students.map(s => ({
+      id: s.id,
+      name: s.name,
+      email: s.email,
+      phone: s.phone,
+      course: s.course,
+      yearLevel: s.year_level,
+      status: s.status
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/students', (req, res) => {
+  const { id, name, email, phone, course, yearLevel, status } = req.body;
+  if (!id || !name || !email) {
+    return res.status(400).json({ error: 'Please provide Student ID, Full Name, and Email.' });
+  }
+  try {
+    const existingStudent = db.prepare('SELECT id FROM students WHERE id = ?').get(id);
+    if (existingStudent) {
+      return res.status(400).json({ error: 'Student ID already registered.' });
+    }
+    const existingEmail = db.prepare('SELECT email FROM students WHERE email = ?').get(email);
+    if (existingEmail) {
+      return res.status(400).json({ error: 'Email address already registered.' });
+    }
+
+    const stmt = db.prepare(`
+      INSERT INTO students (id, name, email, phone, course, year_level, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(id, name, email, phone || '', course || '', yearLevel || '', status || 'active');
+    res.status(201).json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/students/:id', (req, res) => {
+  const { id } = req.params;
+  const { name, email, phone, course, yearLevel, status } = req.body;
+  if (!name || !email) {
+    return res.status(400).json({ error: 'Please provide Full Name and Email.' });
+  }
+  try {
+    const existingEmail = db.prepare('SELECT id FROM students WHERE email = ? AND id != ?').get(email, id);
+    if (existingEmail) {
+      return res.status(400).json({ error: 'Email address already registered to another student.' });
+    }
+
+    const stmt = db.prepare(`
+      UPDATE students
+      SET name = ?, email = ?, phone = ?, course = ?, year_level = ?, status = ?
+      WHERE id = ?
+    `);
+    const result = stmt.run(name, email, phone || '', course || '', yearLevel || '', status || 'active', id);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Student not found.' });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/students/:id', (req, res) => {
+  const { id } = req.params;
+  try {
+    const activeTxn = db.prepare("SELECT id FROM transactions WHERE student_id = ? AND status IN ('active', 'overdue')").get(id);
+    if (activeTxn) {
+      return res.status(400).json({ error: 'Cannot delete student: There are active or overdue borrowing records for this student.' });
+    }
+
+    const stmt = db.prepare('DELETE FROM students WHERE id = ?');
+    const result = stmt.run(id);
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Student not found.' });
     }
     res.json({ success: true });
   } catch (err) {

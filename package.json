@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "concurrently \"npm run server\" \"vite\"",
-    "server": "node server/server.js"
+    "server": "node --watch server/server.js"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -70,9 +70,12 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "4.7.0",
     "concurrently": "^10.0.3",
     "tailwindcss": "4.1.12",
+    "typescript": "^6.0.3",
     "vite": "6.3.5"
   },
   "peerDependencies": {

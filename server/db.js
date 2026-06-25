@@ -65,6 +65,16 @@ db.exec(`
     status TEXT NOT NULL,
     FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS students (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    phone TEXT,
+    course TEXT,
+    year_level TEXT,
+    status TEXT DEFAULT 'active'
+  );
 `);
 
 // Seed default data if empty
@@ -167,6 +177,25 @@ if (reservationCount.count === 0) {
   `);
 
   defaultReservations.forEach(r => insertRes.run(r));
+}
+
+const studentCount = db.prepare('SELECT COUNT(*) AS count FROM students').get();
+if (studentCount.count === 0) {
+  const defaultStudents = [
+    { id: "2024-0001", name: "Maria Santos", email: "maria.santos@cdm.edu.ph", phone: "09123456789", course: "BSIT", year_level: "3rd Year", status: "active" },
+    { id: "2024-0042", name: "Juan dela Cruz", email: "juan.delacruz@cdm.edu.ph", phone: "09123456790", course: "BSIT", year_level: "3rd Year", status: "active" },
+    { id: "2023-0158", name: "Pedro Reyes", email: "pedro.reyes@cdm.edu.ph", phone: "09123456791", course: "BSCE", year_level: "4th Year", status: "active" },
+    { id: "2024-0087", name: "Rosa Garcia", email: "rosa.garcia@cdm.edu.ph", phone: "09123456792", course: "BSEd", year_level: "2nd Year", status: "active" },
+    { id: "2024-0099", name: "Lito Manalo", email: "lito.manalo@cdm.edu.ph", phone: "09123456793", course: "BSIT", year_level: "1st Year", status: "active" },
+    { id: "2023-0221", name: "Carla Bautista", email: "carla.bautista@cdm.edu.ph", phone: "09123456794", course: "BSIT", year_level: "4th Year", status: "active" }
+  ];
+
+  const insertStudent = db.prepare(`
+    INSERT INTO students (id, name, email, phone, course, year_level, status)
+    VALUES (@id, @name, @email, @phone, @course, @year_level, @status)
+  `);
+
+  defaultStudents.forEach(s => insertStudent.run(s));
 }
 
 export default db;
