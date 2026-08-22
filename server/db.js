@@ -1,6 +1,13 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.resolve(__dirname, '../library.db');
@@ -80,10 +87,11 @@ db.exec(`
 // Seed default data if empty
 const librarianCount = db.prepare('SELECT COUNT(*) AS count FROM librarians').get();
 if (librarianCount.count === 0) {
+  const hashedPassword = hashPassword('admin123');
   db.prepare(`
     INSERT INTO librarians (first_name, last_name, email, phone, employee_id, role, username, password, status)
-    VALUES ('Ana', 'Reyes', 'ana.reyes@cdm.edu.ph', '09123456789', 'EMP-0001', 'Head Librarian', 'admin', 'admin123', 'active')
-  `).run();
+    VALUES ('Ana', 'Reyes', 'ana.reyes@cdm.edu.ph', '09123456789', 'EMP-0001', 'Head Librarian', 'admin', ?, 'active')
+  `).run(hashedPassword);
 }
 
 const bookCount = db.prepare('SELECT COUNT(*) AS count FROM books').get();

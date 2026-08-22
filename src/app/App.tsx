@@ -10,8 +10,30 @@ import {
   Edit, Trash,
 } from "lucide-react";
 
+// ─── Global Fetch Interceptor for JWT ─────────────────────────────────────────
+const originalFetch = window.fetch;
+window.fetch = async function (url, options) {
+  const token = localStorage.getItem("authToken");
+  if (token) {
+    options = options || {};
+    options.headers = options.headers || {};
+    if (options.headers instanceof Headers) {
+      options.headers.set("Authorization", `Bearer ${token}`);
+    } else {
+      (options.headers as any)["Authorization"] = `Bearer ${token}`;
+    }
+  }
+  const response = await originalFetch(url, options);
+  if ((response.status === 401 || response.status === 403) && typeof url === "string" && !url.includes("/api/auth/login")) {
+    localStorage.removeItem("librarianName");
+    localStorage.removeItem("authToken");
+    window.location.reload();
+  }
+  return response;
+};
+
 // ─── Types ───────────────────────────────────────────────────────────────────
-type Page = "login" | "register" | "dashboard" | "catalog" | "students" | "borrow" | "reservations" | "returns" | "terms";
+type Page = "login" | "register" | "dashboard" | "catalog" | "students" | "borrow" | "reservations" | "returns" | "terms" | "reports" | "librarians";
 
 interface Book {
   id: string;
@@ -405,7 +427,7 @@ function BookPreviewModal({ book, onClose, onBorrow, onEdit, onDelete }: {
 }
 
 // ─── Login Page ───────────────────────────────────────────────────────────────
-function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string) => void; onGoRegister: () => void }) {
+function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string, r: string) => void; onGoRegister: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -432,7 +454,9 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string) => void; on
     .then(data => {
       setLoading(false);
       localStorage.setItem("librarianName", data.name);
-      onLogin(data.name);
+      localStorage.setItem("librarianRole", data.role);
+      localStorage.setItem("authToken", data.token);
+      onLogin(data.name, data.role);
     })
     .catch(err => {
       setLoading(false);
@@ -1967,19 +1991,21 @@ function TermsPage() {
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-const NAV_ITEMS = [
-  { id: "dashboard" as Page, label: "Dashboard", icon: LayoutDashboard },
-  { id: "catalog" as Page, label: "Book Catalog", icon: BookOpen },
-  { id: "students" as Page, label: "Student Directory", icon: Users },
-  { id: "borrow" as Page, label: "Borrow Book", icon: BookMarked },
-  { id: "reservations" as Page, label: "Reservations", icon: Calendar },
-  { id: "returns" as Page, label: "Return Books", icon: RotateCcw },
-  { id: "terms" as Page, label: "Terms & Conditions", icon: FileText },
-];
-
-function Sidebar({ currentPage, onNavigate, librarianName, onLogout, collapsed, onToggle }: {
-  currentPage: Page; onNavigate: (p: Page) => void; librarianName: string; onLogout: () => void; collapsed: boolean; onToggle: () => void;
+function Sidebar({ currentPage, onNavigate, librarianName, librarianRole, onLogout, collapsed, onToggle }: {
+  currentPage: Page; onNavigate: (p: Page) => void; librarianName: string; librarianRole: string; onLogout: () => void; collapsed: boolean; onToggle: () => void;
 }) {
+  const navItems = [
+    { id: "dashboard" as Page, label: "Dashboard", icon: LayoutDashboard },
+    { id: "catalog" as Page, label: "Book Catalog", icon: BookOpen },
+    { id: "students" as Page, label: "Student Directory", icon: Users },
+    { id: "borrow" as Page, label: "Borrow Book", icon: BookMarked },
+    { id: "reservations" as Page, label: "Reservations", icon: Calendar },
+    { id: "returns" as Page, label: "Return Books", icon: RotateCcw },
+    { id: "reports" as Page, label: "Reports & Logs", icon: FileText },
+    ...(librarianRole === "Admin" || librarianRole === "Head Librarian" ? [{ id: "librarians" as Page, label: "Librarian Panel", icon: Shield }] : []),
+    { id: "terms" as Page, label: "Terms & Conditions", icon: Info },
+  ];
+
   return (
     <div className={`flex flex-col h-screen bg-[#106A2E] transition-all duration-300 ${collapsed ? "w-16" : "w-60"} flex-shrink-0 shadow-xl`}>
       {/* Header */}
@@ -2004,7 +2030,7 @@ function Sidebar({ currentPage, onNavigate, librarianName, onLogout, collapsed, 
       {/* Nav */}
       <nav className="flex-1 py-4 overflow-y-auto">
         <div className="space-y-0.5 px-2">
-          {NAV_ITEMS.map(({ id, label, icon: Icon }) => {
+          {navItems.map(({ id, label, icon: Icon }) => {
             const isActive = currentPage === id;
             return (
               <button key={id} onClick={() => onNavigate(id)}
@@ -2028,7 +2054,7 @@ function Sidebar({ currentPage, onNavigate, librarianName, onLogout, collapsed, 
             </div>
             <div className="min-w-0">
               <p className="text-white text-xs font-semibold truncate">{librarianName}</p>
-              <p className="text-white/50 text-xs">Librarian</p>
+              <p className="text-white/50 text-xs truncate">{librarianRole || "Librarian"}</p>
             </div>
           </div>
         ) : (
@@ -2058,8 +2084,8 @@ interface NotificationItem {
   actionPage?: Page;
 }
 
-function MainLayout({ children, currentPage, librarianName, books, transactions, reservations, onNavigate, onLogout }: {
-  children: React.ReactNode; currentPage: Page; librarianName: string;
+function MainLayout({ children, currentPage, librarianName, librarianRole, books, transactions, reservations, onNavigate, onLogout }: {
+  children: React.ReactNode; currentPage: Page; librarianName: string; librarianRole: string;
   books: Book[]; transactions: Transaction[]; reservations: Reservation[];
   onNavigate: (p: Page) => void; onLogout: () => void;
 }) {
@@ -2132,6 +2158,7 @@ function MainLayout({ children, currentPage, librarianName, books, transactions,
   const titles: Record<Page, string> = {
     login: "Login", register: "Register", dashboard: "Dashboard", catalog: "Book Catalog",
     students: "Student Directory", borrow: "Borrow Book", reservations: "Reservations", returns: "Return Books", terms: "Terms & Conditions",
+    reports: "Reports & Logs", librarians: "Librarian Panel"
   };
 
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -2158,7 +2185,15 @@ function MainLayout({ children, currentPage, librarianName, books, transactions,
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ fontFamily: "var(--font-family-sans)" }}>
-      <Sidebar currentPage={currentPage} onNavigate={onNavigate} librarianName={librarianName} onLogout={onLogout} collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
+      <Sidebar 
+        currentPage={currentPage} 
+        onNavigate={onNavigate} 
+        librarianName={librarianName} 
+        librarianRole={librarianRole} 
+        onLogout={onLogout} 
+        collapsed={collapsed} 
+        onToggle={() => setCollapsed(c => !c)} 
+      />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Header */}
         <header className="bg-white border-b border-border px-6 py-3 flex items-center justify-between flex-shrink-0 shadow-sm">
@@ -2929,11 +2964,312 @@ function DeleteStudentModal({ student, onClose, onRefresh }: DeleteStudentModalP
   );
 }
 
+interface LibrarianUser {
+  id: number;
+  firstName: string;
+  lastName: string;
+  name: string;
+  email: string;
+  phone: string;
+  employeeId: string;
+  role: string;
+  username: string;
+  status: string;
+}
+
+function LibrariansPage() {
+  const [librarians, setLibrarians] = useState<LibrarianUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  function fetchLibrarians() {
+    setLoading(true);
+    fetch("/api/librarians")
+      .then(r => {
+        if (!r.ok) throw new Error("Failed to load librarians list.");
+        return r.json();
+      })
+      .then(data => {
+        setLibrarians(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.message);
+        setLoading(false);
+      });
+  }
+
+  useEffect(() => {
+    fetchLibrarians();
+  }, []);
+
+  function handleStatusUpdate(id: number, newStatus: string) {
+    fetch(`/api/librarians/${id}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus })
+    })
+    .then(r => r.json())
+    .then(res => {
+      if (res.error) {
+        alert(res.error);
+      } else {
+        fetchLibrarians();
+      }
+    })
+    .catch(() => alert("Failed to update status."));
+  }
+
+  function handleRoleUpdate(id: number, newRole: string) {
+    fetch(`/api/librarians/${id}/role`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: newRole })
+    })
+    .then(r => r.json())
+    .then(res => {
+      if (res.error) {
+        alert(res.error);
+      } else {
+        fetchLibrarians();
+      }
+    })
+    .catch(() => alert("Failed to update role."));
+  }
+
+  function handleDelete(id: number) {
+    if (!confirm("Are you sure you want to delete this librarian account? This cannot be undone.")) return;
+    fetch(`/api/librarians/${id}`, {
+      method: "DELETE"
+    })
+    .then(r => r.json())
+    .then(res => {
+      if (res.error) {
+        alert(res.error);
+      } else {
+        fetchLibrarians();
+      }
+    })
+    .catch(() => alert("Failed to delete account."));
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="w-6 h-6 text-[#106A2E] animate-spin" />
+        <span className="ml-2 text-sm text-muted-foreground">Loading accounts...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 max-w-6xl mx-auto">
+      {error && (
+        <div className="p-4 bg-red-50 text-red-700 rounded-lg text-sm border border-red-200">
+          {error}
+        </div>
+      )}
+      
+      <div className="bg-white rounded-xl shadow-sm border border-border overflow-hidden">
+        <div className="p-5 border-b border-border bg-gray-50 flex items-center justify-between">
+          <div>
+            <h2 className="font-bold text-foreground text-sm">Librarian Staff Accounts</h2>
+            <p className="text-xs text-muted-foreground">Approve new registrations, manage roles, and suspend/activate accounts.</p>
+          </div>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-border text-[11px] font-bold text-muted-foreground uppercase bg-gray-50/50">
+                <th className="px-5 py-3">Librarian Name</th>
+                <th className="px-5 py-3">Employee ID</th>
+                <th className="px-5 py-3">Email & Contact</th>
+                <th className="px-5 py-3">Role</th>
+                <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border text-sm">
+              {librarians.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">No accounts found.</td>
+                </tr>
+              ) : (
+                librarians.map(lib => (
+                  <tr key={lib.id} className="hover:bg-gray-50/55 transition-colors">
+                    <td className="px-5 py-4">
+                      <p className="font-semibold text-foreground">{lib.name}</p>
+                      <p className="text-xs text-muted-foreground">@{lib.username}</p>
+                    </td>
+                    <td className="px-5 py-4 font-mono text-xs">{lib.employeeId}</td>
+                    <td className="px-5 py-4">
+                      <p className="text-xs text-foreground font-medium">{lib.email}</p>
+                      <p className="text-xs text-muted-foreground">{lib.phone || 'No phone'}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold
+                        ${lib.role === 'Admin' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'}`}>
+                        {lib.role === 'Admin' ? 'Administrator' : 'Librarian'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold
+                        ${lib.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                        {lib.status === 'active' ? 'Active' : 'Pending Approval'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-right space-x-1.5 whitespace-nowrap">
+                      {lib.status === 'pending' ? (
+                        <>
+                          <button onClick={() => handleStatusUpdate(lib.id, 'active')}
+                            className="px-2.5 py-1 bg-[#106A2E] text-white text-xs font-semibold rounded hover:bg-[#0b4f21] transition-colors cursor-pointer">
+                            Approve
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => handleStatusUpdate(lib.id, lib.status === 'active' ? 'inactive' : 'active')}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer
+                              ${lib.status === 'active' ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-green-100 text-green-800 hover:bg-green-200'}`}>
+                            {lib.status === 'active' ? 'Suspend' : 'Activate'}
+                          </button>
+                        </>
+                      )}
+                      
+                      <button onClick={() => handleRoleUpdate(lib.id, lib.role === 'Admin' ? 'Librarian' : 'Admin')}
+                        className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded hover:bg-blue-100 transition-colors cursor-pointer">
+                        Make {lib.role === 'Admin' ? 'Staff' : 'Admin'}
+                      </button>
+
+                      <button onClick={() => handleDelete(lib.id)}
+                        className="px-2 py-1 bg-red-50 text-red-600 text-xs font-semibold rounded hover:bg-red-100 transition-colors cursor-pointer">
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReportsPage({ books, transactions }: { books: Book[]; transactions: Transaction[] }) {
+  const [reportType, setReportType] = useState<"transactions" | "inventory">("transactions");
+  const [txFilter, setTxFilter] = useState("all");
+  const [catFilter, setCatFilter] = useState("all");
+
+  const categories = useMemo(() => {
+    const list = new Set(books.map(b => b.category));
+    return Array.from(list);
+  }, [books]);
+
+  function handleExport() {
+    const filterVal = reportType === "transactions" ? txFilter : catFilter;
+    const token = localStorage.getItem("authToken");
+    
+    // Construct the reporting URL
+    const url = `/api/reports/export?type=${reportType}&filter=${filterVal}&token=${encodeURIComponent(token || "")}`;
+    
+    // Open in new window
+    window.open(url, "_blank");
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="bg-white rounded-xl shadow-sm border border-border p-6">
+        <h2 className="text-base font-bold text-foreground mb-1">Library System Reports & Logs Generator</h2>
+        <p className="text-xs text-muted-foreground mb-6">Create printable summaries or export logs as formatted PDF files.</p>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Card 1: Selection */}
+          <div className="space-y-4">
+            <label className="block text-xs font-bold text-muted-foreground uppercase">Report Type</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button 
+                onClick={() => setReportType("transactions")}
+                className={`p-4 rounded-xl border-2 text-left transition-all cursor-pointer
+                  ${reportType === "transactions" ? "border-[#106A2E] bg-[#106A2E]/5" : "border-border hover:border-gray-300"}`}
+              >
+                <FileText className={`w-6 h-6 mb-2 ${reportType === "transactions" ? "text-[#106A2E]" : "text-muted-foreground"}`} />
+                <p className="font-semibold text-sm text-foreground">Transactions Log</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Borrow histories, due dates, penalties.</p>
+              </button>
+              
+              <button 
+                onClick={() => setReportType("inventory")}
+                className={`p-4 rounded-xl border-2 text-left transition-all cursor-pointer
+                  ${reportType === "inventory" ? "border-[#106A2E] bg-[#106A2E]/5" : "border-border hover:border-gray-300"}`}
+              >
+                <BookOpen className={`w-6 h-6 mb-2 ${reportType === "inventory" ? "text-[#106A2E]" : "text-muted-foreground"}`} />
+                <p className="font-semibold text-sm text-foreground">Book Inventory</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Title catalogs, categories, borrow counts.</p>
+              </button>
+            </div>
+          </div>
+
+          {/* Card 2: Filter Configurations */}
+          <div className="space-y-4 bg-gray-50/50 p-5 rounded-xl border border-border/80">
+            <label className="block text-xs font-bold text-muted-foreground uppercase">Filter Parameters</label>
+            
+            {reportType === "transactions" ? (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Filter transactions listing by status:</p>
+                <select 
+                  value={txFilter} 
+                  onChange={(e) => setTxFilter(e.target.value)}
+                  className="w-full p-2.5 rounded-lg border border-border bg-white text-sm focus:ring-[#106A2E]"
+                >
+                  <option value="all">All Transactions</option>
+                  <option value="active">Active Borrowings</option>
+                  <option value="overdue">Overdue Alerts Only</option>
+                  <option value="returned">Successfully Returned</option>
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Filter inventory listing by category:</p>
+                <select 
+                  value={catFilter} 
+                  onChange={(e) => setCatFilter(e.target.value)}
+                  className="w-full p-2.5 rounded-lg border border-border bg-white text-sm focus:ring-[#106A2E]"
+                >
+                  <option value="all">All Categories</option>
+                  {categories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-8 pt-5 border-t border-border flex justify-end">
+          <button 
+            onClick={handleExport}
+            className="flex items-center gap-2 px-5 py-2.5 bg-[#106A2E] text-white font-semibold text-sm rounded-lg hover:bg-[#0b4f21] transition-all shadow-sm cursor-pointer"
+          >
+            <Printer className="w-4 h-4" />
+            Generate & Export PDF Report
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [authPage, setAuthPage] = useState<"login" | "register">("login");
   const [librarianName, setLibrarianName] = useState<string | null>(() => {
     return localStorage.getItem("librarianName");
+  });
+  const [librarianRole, setLibrarianRole] = useState<string | null>(() => {
+    return localStorage.getItem("librarianRole");
   });
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
   const [previewBook, setPreviewBook] = useState<Book | null>(null);
@@ -2979,14 +3315,18 @@ export default function App() {
     }
   }, [librarianName]);
 
-  function handleLogin(name: string) {
+  function handleLogin(name: string, role: string) {
     setLibrarianName(name);
+    setLibrarianRole(role);
     setCurrentPage("dashboard");
   }
 
   function handleLogout() {
     localStorage.removeItem("librarianName");
+    localStorage.removeItem("librarianRole");
+    localStorage.removeItem("authToken");
     setLibrarianName(null);
+    setLibrarianRole(null);
     setAuthPage("login");
   }
 
@@ -3126,6 +3466,13 @@ export default function App() {
             onRefresh={fetchAllData}
           />
         )}
+        {currentPage === "reports" && (
+          <ReportsPage 
+            books={books}
+            transactions={transactions}
+          />
+        )}
+        {currentPage === "librarians" && <LibrariansPage />}
         {currentPage === "terms" && <TermsPage />}
       </MainLayout>
     </div>
