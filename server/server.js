@@ -111,6 +111,62 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// ─── Rate Limiting Middleware ───────────────────────────────────────────────
+function createRateLimiter({ windowMs = 15 * 60 * 1000, max = 100, message = 'Too many requests, please try again later.' }) {
+  const requests = new Map();
+
+  // Periodic cleanup of expired rate limit records every 5 minutes
+  setInterval(() => {
+    const now = Date.now();
+    for (const [ip, data] of requests.entries()) {
+      if (now > data.resetTime) {
+        requests.delete(ip);
+      }
+    }
+  }, 5 * 60 * 1000).unref();
+
+  return (req, res, next) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const now = Date.now();
+
+    let record = requests.get(ip);
+    if (!record || now > record.resetTime) {
+      record = { count: 0, resetTime: now + windowMs };
+      requests.set(ip, record);
+    }
+
+    record.count++;
+
+    // Standard RateLimit Headers
+    res.setHeader('X-RateLimit-Limit', max);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - record.count));
+    res.setHeader('X-RateLimit-Reset', Math.ceil(record.resetTime / 1000));
+
+    if (record.count > max) {
+      return res.status(429).json({ error: message });
+    }
+
+    next();
+  };
+}
+
+// General API Rate Limiter (Max 300 requests per 15 mins per IP)
+const apiLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  message: 'Too many requests from this IP. Please try again after 15 minutes.'
+});
+
+// Strict Auth Rate Limiter (Max 15 attempts per 15 mins per IP to prevent brute-force attacks)
+const authLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  message: 'Too many authentication attempts. Please try again after 15 minutes.'
+});
+
+app.use('/api', apiLimiter);
+
+
 // Helper helper to map DB columns to frontend camelCase keys
 function mapBook(b) {
   return {
@@ -159,7 +215,7 @@ function mapReservation(r) {
 }
 
 // ─── Authentication API ──────────────────────────────────────────────────────
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', authLimiter, (req, res) => {
   const { username, password } = req.body;
   try {
     const librarian = db.prepare('SELECT * FROM librarians WHERE username = ?').get(username);
@@ -199,7 +255,7 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', authLimiter, (req, res) => {
   const { firstName, lastName, email, phone, employeeId, role, username, password } = req.body;
   try {
     const hashedPassword = hashPassword(password);
