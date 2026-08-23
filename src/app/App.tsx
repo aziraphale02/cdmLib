@@ -504,7 +504,7 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string, r: string) 
             <p className="text-muted-foreground text-sm mt-1">Sign in to your librarian account</p>
           </div>
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-700 text-sm text-left">
+            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-[#B23B3B] text-sm text-left">
               <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
             </div>
           )}
@@ -552,6 +552,7 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string, r: string) 
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
+
           <p className="text-center text-xs text-muted-foreground mt-6">
             New librarian?{" "}
             <button onClick={onGoRegister} className="text-[#106A2E] font-medium hover:underline cursor-pointer">Create an account</button>
