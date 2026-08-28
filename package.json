@@ -66,9 +66,7 @@
     "sonner": "2.0.3",
     "tailwind-merge": "3.2.0",
     "tw-animate-css": "1.3.8",
-    "vaul": "1.1.2"
-  },
-  "devDependencies": {
+    "vaul": "1.1.2",
     "@tailwindcss/vite": "4.1.12",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
@@ -78,6 +76,7 @@
     "typescript": "^6.0.3",
     "vite": "6.3.5"
   },
+  "devDependencies": {},
   "peerDependencies": {
     "react": "18.3.1",
     "react-dom": "18.3.1"
