@@ -2,6 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import db from './db.js';
 import crypto from 'crypto';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -94,15 +99,24 @@ function authenticateToken(req, res, next) {
 const app = express();
 const PORT = process.env.PORT || 5002;
 
-const allowedOrigins = [
+const defaultOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
-  'http://localhost:5175'
+  'http://localhost:5175',
+  'http://localhost:8080',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:8080'
 ];
+
+const envOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : (process.env.FRONTEND_URL ? [process.env.FRONTEND_URL.trim()] : []);
+
+const allowedOrigins = Array.from(new Set([...defaultOrigins, ...envOrigins]));
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || origin === 'null' || allowedOrigins.includes(origin)) {
+    if (!origin || origin === 'null' || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
       callback(null, true);
     } else {
       callback(null, false);
@@ -875,6 +889,27 @@ app.get('/api/reports/export', authenticateToken, (req, res) => {
   } else {
     res.status(400).json({ error: 'Invalid report type.' });
   }
+});
+
+// ─── Production Static File Serving & SPA Fallback ──────────────────────────
+const distPath = path.join(__dirname, '../dist');
+const promoPath = path.join(__dirname, '../promotional-website');
+
+app.use(express.static(distPath));
+app.use('/promo', express.static(promoPath));
+
+app.use((req, res, next) => {
+  if (req.method !== 'GET') {
+    return next();
+  }
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'API endpoint not found.' });
+  }
+  res.sendFile(path.join(distPath, 'index.html'), (err) => {
+    if (err) {
+      next();
+    }
+  });
 });
 
 app.listen(PORT, () => {

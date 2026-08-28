@@ -6,7 +6,7 @@ const liveSearchResults = document.getElementById('liveSearchResults');
 const accordionTriggers = document.querySelectorAll('.accordion-trigger');
 
 // ─── Configuration & State ───────────────────────────────────────────────────
-const BACKEND_URL = 'http://localhost:5002';
+const BACKEND_URL = window.VITE_API_BASE_URL || window.API_BASE_URL || (window.location.origin.includes('localhost') ? 'http://localhost:5002' : window.location.origin);
 let books = [];
 
 // Fallback Mock Books in case the backend server is not running
