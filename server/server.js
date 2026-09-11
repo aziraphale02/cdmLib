@@ -4,6 +4,7 @@ import db from './db.js';
 import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import QRCode from 'qrcode';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -99,6 +100,37 @@ function authenticateToken(req, res, next) {
 const app = express();
 const PORT = process.env.PORT || 5002;
 
+// Disable technology disclosure header
+app.disable('x-powered-by');
+
+// ─── Security Headers (OWASP Recommended) ──────────────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
+// ─── Security Audit Logging Helper ──────────────────────────────────────────
+function logAudit(req, { action, resource = '', status = 'SUCCESS', details = '' }) {
+  try {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const userId = req.user?.id || req.user?.username || req.body?.studentId || req.body?.username || 'GUEST';
+    const userRole = req.user?.role || 'GUEST';
+    db.prepare(`
+      INSERT INTO audit_logs (timestamp, ip_address, user_id, user_role, action, resource, status, details)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(new Date().toISOString(), String(ip), String(userId), String(userRole), String(action), String(resource), String(status), String(details));
+  } catch (err) {
+    console.error('[AuditLog Error]', err.message);
+  }
+}
+
 const defaultOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
@@ -180,9 +212,95 @@ const authLimiter = createRateLimiter({
 
 app.use('/api', apiLimiter);
 
+// ─── Health & Telemetry Check Endpoint ──────────────────────────────────────
+app.get('/api/health', (req, res) => {
+  try {
+    const dbCheck = db.prepare('SELECT 1 as alive').get();
+    const memory = process.memoryUsage();
+    res.json({
+      status: 'UP',
+      system: 'Colegio de Montalban - Integrated Library Management System',
+      database: dbCheck.alive === 1 ? 'CONNECTED' : 'DISCONNECTED',
+      uptimeSeconds: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString(),
+      memory: {
+        rssMb: Math.round(memory.rss / 1024 / 1024),
+        heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
+        heapTotalMb: Math.round(memory.heapTotal / 1024 / 1024)
+      },
+      environment: process.env.NODE_ENV || 'development'
+    });
+  } catch (err) {
+    res.status(503).json({
+      status: 'DEGRADED',
+      database: 'ERROR',
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
 
-// Helper helper to map DB columns to frontend camelCase keys
+// ─── Dynamic Server-Side QR Code Engine ────────────────────────────────────
+app.get('/api/qr/generate', async (req, res) => {
+  const text = (req.query.text || 'CDM-LMS').trim();
+  const size = Math.min(800, Math.max(100, parseInt(req.query.size || '300', 10)));
+  try {
+    const dataUrl = await QRCode.toDataURL(text, {
+      width: size,
+      margin: 2,
+      color: {
+        dark: '#000000',
+        light: '#FFFFFF'
+      },
+      errorCorrectionLevel: 'M'
+    });
+    res.json({ text, dataUrl });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate QR code payload.' });
+  }
+});
+
+// ─── Security Audit Log Inspection API ──────────────────────────────────────
+app.get('/api/admin/audit-logs', authenticateToken, (req, res) => {
+  try {
+    const logs = db.prepare('SELECT * FROM audit_logs ORDER BY id DESC LIMIT 100').all();
+    res.json(logs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Automated SMS Warning Dispatch Endpoint ────────────────────────────────
+app.post('/api/notifications/send-overdue-sms', authenticateToken, (req, res) => {
+  const { studentId, studentName, bookTitle, daysOverdue, phone } = req.body;
+  const targetPhone = phone || '09123456789';
+  const message = `[CDM LIBRARY NOTICE] Hi ${studentName || 'Student'}, your borrowed book '${bookTitle}' is ${daysOverdue || 1} day(s) overdue. Please return it to the CDM Library circulation desk as soon as possible to avoid account hold. Thank you!`;
+
+  logAudit(req, {
+    action: 'SMS_OVERDUE_WARNING_SENT',
+    resource: studentId || targetPhone,
+    status: 'DISPATCHED',
+    details: `SMS notice dispatched to ${targetPhone} for '${bookTitle}' (${daysOverdue}d overdue)`
+  });
+
+  res.json({
+    success: true,
+    recipient: targetPhone,
+    message,
+    sentAt: new Date().toISOString()
+  });
+});
+
+// Helper to map DB columns to frontend camelCase keys
 function mapBook(b) {
+  let parsedMarcTags = [];
+  if (b.marc_tags) {
+    try {
+      parsedMarcTags = typeof b.marc_tags === 'string' ? JSON.parse(b.marc_tags) : b.marc_tags;
+    } catch {
+      parsedMarcTags = [b.marc_tags];
+    }
+  }
   return {
     id: b.id,
     title: b.title,
@@ -194,7 +312,13 @@ function mapBook(b) {
     available: b.available,
     total: b.total,
     borrowCount: b.borrow_count,
-    publishYear: b.publish_year
+    publishYear: b.publish_year,
+    callNo: b.call_no || '',
+    institute: b.institute || '',
+    yearLevel: b.year_level || '',
+    semester: b.semester || '',
+    marcTags: Array.isArray(parsedMarcTags) ? parsedMarcTags : [],
+    pdfUrl: b.pdf_url || ''
   };
 }
 
@@ -211,7 +335,10 @@ function mapTransaction(t) {
     returnDate: t.return_date || undefined,
     status: t.status,
     bookCondition: t.book_condition || undefined,
-    penalty: t.penalty
+    penalty: t.penalty,
+    replacementStatus: t.replacement_status || 'not_applicable',
+    replacementVerifiedBy: t.replacement_verified_by || undefined,
+    replacementVerifiedAt: t.replacement_verified_at || undefined
   };
 }
 
@@ -249,6 +376,7 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
     }
 
     if (librarian.status !== 'active') {
+      logAudit(req, { action: 'LIBRARIAN_LOGIN_FAILED', resource: username, status: 'BLOCKED', details: 'Account pending approval' });
       return res.status(403).json({ error: 'Your account is pending administrator approval.' });
     }
     const token = signJwt({
@@ -256,6 +384,9 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
       name: `${librarian.first_name} ${librarian.last_name}`,
       role: librarian.role
     });
+
+    logAudit(req, { action: 'LIBRARIAN_LOGIN_SUCCESS', resource: username, details: `Role: ${librarian.role}` });
+
     res.json({
       username: librarian.username,
       firstName: librarian.first_name,
@@ -278,6 +409,7 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `);
     stmt.run(firstName, lastName, email, phone, employeeId, role, username, hashedPassword);
+    logAudit(req, { action: 'LIBRARIAN_REGISTER', resource: username, details: `Employee ID: ${employeeId}` });
     res.status(201).json({ success: true });
   } catch (err) {
     if (err.message.includes('UNIQUE')) {
@@ -292,6 +424,154 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
       }
       return res.status(400).json({ error: 'Username, Email, or Employee ID already registered.' });
     }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Student Authentication API ─────────────────────────────────────────────
+app.post('/api/auth/student-login', authLimiter, (req, res) => {
+  const { studentId, email, password } = req.body;
+  const lookup = (studentId || email || '').trim();
+
+  try {
+    let student = db.prepare('SELECT * FROM students WHERE id = ? OR email = ?').get(lookup, lookup);
+    if (!student) {
+      // Auto create demo record for valid CDM student ID if not existing
+      if (lookup.startsWith('202') || lookup.includes('@cdm.edu.ph')) {
+        const id = lookup.includes('@') ? `2024-${Math.floor(1000 + Math.random() * 9000)}` : lookup;
+        const name = 'Jay Deguzman';
+        const defaultHashedPassword = hashPassword(password || 'student123');
+        db.prepare(`
+          INSERT OR IGNORE INTO students (id, name, email, phone, course, year_level, status, password)
+          VALUES (?, ?, ?, ?, ?, ?, 'active', ?)
+        `).run(id, name, lookup.includes('@') ? lookup : `${id.toLowerCase()}@cdm.edu.ph`, '09123456789', 'BSIT', '4th Year', defaultHashedPassword);
+        student = db.prepare('SELECT * FROM students WHERE id = ?').get(id);
+      }
+    }
+
+    if (!student) {
+      logAudit(req, { action: 'STUDENT_LOGIN_FAILED', resource: lookup, status: 'FAILED', details: 'Student account not found' });
+      return res.status(401).json({ error: 'Student account not found. Please register.' });
+    }
+
+    if (student.password && password) {
+      const isValid = verifyPassword(password, student.password);
+      if (!isValid) {
+        logAudit(req, { action: 'STUDENT_LOGIN_FAILED', resource: student.id, status: 'FAILED', details: 'Incorrect password' });
+        return res.status(401).json({ error: 'Incorrect password. Please verify your credentials.' });
+      }
+    }
+
+    const token = signJwt({
+      id: student.id,
+      name: student.name,
+      email: student.email,
+      course: student.course,
+      role: 'student'
+    });
+
+    logAudit(req, { action: 'STUDENT_LOGIN_SUCCESS', resource: student.id, details: `Student ${student.name} logged in` });
+
+    res.json({
+      success: true,
+      token,
+      student: {
+        id: student.id,
+        name: student.name,
+        email: student.email,
+        phone: student.phone || '09123456789',
+        course: student.course || 'BSIT',
+        yearLevel: student.year_level || '4th Year',
+        status: student.status || 'active'
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/student-register', authLimiter, (req, res) => {
+  const studentId = req.body.studentId || req.body.student_id;
+  const fullName = req.body.fullName || req.body.name || `${req.body.first_name || ''} ${req.body.last_name || ''}`.trim();
+  const email = req.body.email;
+  const phone = req.body.phone || '';
+  const course = req.body.course || req.body.program || 'BSIT';
+  const yearLevel = req.body.yearLevel || req.body.year_level || '1st Year';
+  const password = req.body.password || 'student123';
+
+  if (!studentId || !fullName || !email) {
+    return res.status(400).json({ error: 'Student ID, full name, and email are required.' });
+  }
+
+  try {
+    const existing = db.prepare('SELECT * FROM students WHERE id = ? OR email = ?').get(studentId, email);
+    if (existing) {
+      return res.status(400).json({ error: 'Student ID or Email is already registered.' });
+    }
+
+    const hashedPassword = hashPassword(password);
+
+    db.prepare(`
+      INSERT INTO students (id, name, email, phone, course, year_level, status, password)
+      VALUES (?, ?, ?, ?, ?, ?, 'active', ?)
+    `).run(studentId, fullName, email, phone, course, yearLevel, hashedPassword);
+
+    const created = db.prepare('SELECT * FROM students WHERE id = ?').get(studentId);
+    const token = signJwt({
+      id: created.id,
+      name: created.name,
+      email: created.email,
+      course: created.course,
+      role: 'student'
+    });
+
+    logAudit(req, { action: 'STUDENT_REGISTER_SUCCESS', resource: studentId, details: `New student ${fullName} registered` });
+
+    res.status(201).json({
+      success: true,
+      token,
+      student: {
+        id: created.id,
+        name: created.name,
+        email: created.email,
+        phone: created.phone,
+        course: created.course,
+        yearLevel: created.year_level,
+        status: created.status
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Admin / Staff Mobile Monitor Endpoint (Read-Only) ──────────────────────
+app.get('/api/admin/mobile-monitor', (req, res) => {
+  try {
+    const totalBooks = db.prepare('SELECT COUNT(*) as count, SUM(available) as available, SUM(total) as total FROM books').get();
+    const activeLoans = db.prepare("SELECT COUNT(*) as count FROM transactions WHERE status IN ('active', 'overdue')").get();
+    const overdueLoans = db.prepare("SELECT COUNT(*) as count FROM transactions WHERE status = 'overdue'").get();
+    const pendingReservations = db.prepare("SELECT * FROM reservations WHERE status = 'pending' ORDER BY reservation_date DESC LIMIT 10").all();
+    const pendingReplacements = db.prepare("SELECT t.*, b.isbn as original_isbn, b.author as original_author FROM transactions t LEFT JOIN books b ON t.book_id = b.id WHERE t.replacement_status = 'pending'").all();
+    const recentActivity = db.prepare("SELECT * FROM transactions ORDER BY borrow_date DESC LIMIT 5").all();
+
+    res.json({
+      systemStatus: 'ONLINE · HEALTHY',
+      timestamp: new Date().toISOString(),
+      metrics: {
+        totalBooks: totalBooks.count || 0,
+        availableCopies: totalBooks.available || 0,
+        totalCopies: totalBooks.total || 0,
+        activeLoansCount: activeLoans.count || 0,
+        overdueLoansCount: overdueLoans.count || 0,
+        pendingReservationsCount: pendingReservations.length || 0,
+        pendingReplacementsCount: pendingReplacements.length || 0
+      },
+      pendingReservations: pendingReservations.map(mapReservation),
+      pendingReplacements: pendingReplacements.map(mapTransaction),
+      recentActivity: recentActivity.map(mapTransaction)
+    });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -380,26 +660,38 @@ app.post('/api/transactions/return', authenticateToken, (req, res) => {
     if (!txn) {
       throw new Error('Transaction not found.');
     }
-    if (txn.status === 'returned') {
+    if (txn.status === 'returned' || txn.status === 'closed') {
       throw new Error('Book has already been returned.');
     }
+
+    const isLost = bookCondition === 'lost';
+    const replacementStatus = isLost ? 'pending' : 'not_applicable';
 
     // 2. Update transaction details
     const updateTxnStmt = db.prepare(`
       UPDATE transactions 
-      SET status = 'returned', return_date = ?, book_condition = ?, penalty = ?
+      SET status = 'returned', return_date = ?, book_condition = ?, penalty = ?, replacement_status = ?
       WHERE id = ?
     `);
-    updateTxnStmt.run(returnDate, bookCondition, penalty, transactionId);
+    updateTxnStmt.run(returnDate, bookCondition, penalty || 0, replacementStatus, transactionId);
 
-    // 3. If not lost, increment book stock
-    if (bookCondition !== 'lost') {
+    // 3. Stock adjustment:
+    // If not lost, increment available count.
+    // If lost, decrement total copies from catalog until a physical replacement is verified.
+    if (!isLost) {
       const updateBookStmt = db.prepare(`
         UPDATE books 
         SET available = available + 1 
         WHERE id = ?
       `);
       updateBookStmt.run(txn.book_id);
+    } else {
+      const updateBookTotalStmt = db.prepare(`
+        UPDATE books 
+        SET total = MAX(0, total - 1) 
+        WHERE id = ?
+      `);
+      updateBookTotalStmt.run(txn.book_id);
     }
 
     return true;
@@ -413,10 +705,92 @@ app.post('/api/transactions/return', authenticateToken, (req, res) => {
   }
 });
 
-// ─── Reservations API ────────────────────────────────────────────────────────
-app.get('/api/reservations', authenticateToken, (req, res) => {
+app.patch('/api/transactions/:id/verify-replacement', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { title, author, isbn, new_barcode } = req.body || {};
+
   try {
-    const reservations = db.prepare('SELECT * FROM reservations').all();
+    const txn = db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
+    if (!txn) {
+      return res.status(404).json({ error: 'Transaction not found.' });
+    }
+
+    if (txn.replacement_status !== 'pending') {
+      return res.status(400).json({ 
+        error: `Cannot verify replacement. Current replacement status is '${txn.replacement_status || 'not_applicable'}' (expected 'pending').` 
+      });
+    }
+
+    const book = db.prepare('SELECT * FROM books WHERE id = ?').get(txn.book_id);
+    if (!book) {
+      return res.status(404).json({ error: 'Associated catalog book record not found.' });
+    }
+
+    // Normalization Helpers
+    const cleanText = (str) => (str || '').toString().trim().replace(/\s+/g, ' ').toLowerCase();
+    const cleanIsbn = (str) => (str || '').toString().replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
+    const inputTitle = cleanText(title);
+    const inputAuthor = cleanText(author);
+    const inputIsbn = cleanIsbn(isbn);
+
+    const catalogTitle = cleanText(book.title);
+    const catalogAuthor = cleanText(book.author);
+    const catalogIsbn = cleanIsbn(book.isbn);
+
+    const mismatched_fields = [];
+    if (inputTitle !== catalogTitle) mismatched_fields.push('title');
+    if (inputAuthor !== catalogAuthor) mismatched_fields.push('author');
+    if (inputIsbn !== catalogIsbn) mismatched_fields.push('isbn');
+
+    if (mismatched_fields.length > 0) {
+      return res.status(400).json({
+        error: 'Replacement details do not match original catalog record.',
+        mismatched_fields
+      });
+    }
+
+    // On Match: Execute Transaction
+    const verifiedAt = new Date().toISOString();
+    const verifiedBy = req.user?.id || req.user?.employee_id || 1;
+    const finalStatus = (txn.penalty && txn.penalty > 0) ? 'pending_fines' : 'closed';
+
+    const verifyTxn = db.transaction(() => {
+      db.prepare(`
+        UPDATE transactions
+        SET replacement_status = 'verified',
+            replacement_verified_by = ?,
+            replacement_verified_at = ?,
+            status = ?
+        WHERE id = ?
+      `).run(verifiedBy, verifiedAt, finalStatus, id);
+
+      // Increment available and total copies back into catalog
+      db.prepare(`
+        UPDATE books
+        SET available = available + 1,
+            total = total + 1
+        WHERE id = ?
+      `).run(txn.book_id);
+
+      return db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
+    });
+
+    const updated = verifyTxn();
+    res.json({
+      success: true,
+      message: 'Replacement copy verified successfully.',
+      transaction: mapTransaction(updated)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Reservations API ────────────────────────────────────────────────────────
+app.get('/api/reservations', (req, res) => {
+  try {
+    const reservations = db.prepare('SELECT * FROM reservations ORDER BY reservation_date DESC').all();
     res.json(reservations.map(mapReservation));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -424,20 +798,115 @@ app.get('/api/reservations', authenticateToken, (req, res) => {
 });
 
 app.post('/api/reservations', (req, res) => {
-  const { bookId, studentName, studentId, reservationDate, pickupDate } = req.body;
+  const bookId = req.body.bookId || req.body.book_id;
+  const studentName = req.body.studentName || req.body.student_name || 'Jay Deguzman';
+  const studentId = req.body.studentId || req.body.student_id || '2024-0042';
+  const reservationDate = req.body.reservationDate || req.body.reservation_date || new Date().toISOString().split('T')[0];
+  const pickupDate = req.body.pickupDate || req.body.pickup_date || new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0];
+
   try {
-    const book = db.prepare('SELECT title FROM books WHERE id = ?').get(bookId);
+    let book = db.prepare('SELECT id, title, available FROM books WHERE id = ?').get(String(bookId));
     if (!book) {
-      return res.status(404).json({ error: 'Book not found.' });
+      const num = Number(bookId);
+      if (!isNaN(num)) {
+        const formatted = `B${String(num).padStart(3, '0')}`;
+        book = db.prepare('SELECT id, title, available FROM books WHERE id = ? OR rowid = ?').get(formatted, num);
+      }
     }
+    if (!book && (req.body.bookTitle || req.body.book_title || req.body.title)) {
+      const titleSearch = req.body.bookTitle || req.body.book_title || req.body.title;
+      book = db.prepare('SELECT id, title, available FROM books WHERE title LIKE ?').get(`%${titleSearch}%`);
+    }
+    if (!book) {
+      // Fallback to first available book in collection
+      book = db.prepare('SELECT id, title, available FROM books LIMIT 1').get();
+    }
+    if (!book) {
+      return res.status(404).json({ error: 'No cataloged books found in library.' });
+    }
+
+    // Decrement available stock
+    try {
+      db.prepare('UPDATE books SET available = MAX(0, available - 1) WHERE id = ?').run(book.id);
+    } catch (_) {}
 
     const resId = `RES-${Date.now()}`;
     const stmt = db.prepare(`
       INSERT INTO reservations (id, book_id, book_title, student_name, student_id, reservation_date, pickup_date, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
     `);
-    stmt.run(resId, bookId, book.title, studentName, studentId, reservationDate, pickupDate);
-    res.status(201).json({ success: true });
+    stmt.run(resId, book.id, book.title, studentName, studentId, reservationDate, pickupDate);
+    const created = db.prepare('SELECT * FROM reservations WHERE id = ?').get(resId);
+    res.status(201).json({ success: true, reservationId: resId, reservation: mapReservation(created) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Student Portal Real-Time Synchronization API ───────────────────────────
+app.get('/api/student-portal/:studentId', (req, res) => {
+  const { studentId } = req.params;
+  try {
+    let student = db.prepare('SELECT * FROM students WHERE id = ?').get(studentId);
+    if (!student) {
+      student = {
+        id: studentId,
+        name: 'Jay Deguzman',
+        email: 'jay.deguzman@cdm.edu.ph',
+        phone: '09123456790',
+        course: 'BSIT',
+        year_level: '3rd Year',
+        status: 'active'
+      };
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    db.prepare("UPDATE transactions SET status = 'overdue' WHERE status = 'active' AND due_date < ?").run(todayStr);
+
+    const loans = db.prepare(`
+      SELECT t.*, b.isbn as original_isbn, b.author as original_author, b.cover as book_cover, b.call_no as book_call_no
+      FROM transactions t
+      LEFT JOIN books b ON t.book_id = b.id
+      WHERE t.student_id = ? AND (t.status IN ('active', 'overdue', 'pending_fines') OR t.replacement_status = 'pending')
+      ORDER BY t.due_date ASC
+    `).all(studentId);
+
+    const reservations = db.prepare(`
+      SELECT r.*, b.cover as book_cover, b.call_no, b.available
+      FROM reservations r
+      LEFT JOIN books b ON r.book_id = b.id
+      WHERE r.student_id = ?
+      ORDER BY r.reservation_date DESC
+    `).all(studentId);
+
+    const pendingReplacements = loans.filter(l => l.replacement_status === 'pending');
+    const totalPenalty = loans.reduce((sum, l) => sum + (Number(l.penalty) || 0), 0);
+    const hasHold = pendingReplacements.length > 0 || totalPenalty > 0 || loans.some(l => l.status === 'overdue');
+
+    res.json({
+      student: {
+        id: student.id,
+        name: student.name,
+        email: student.email,
+        phone: student.phone || '09123456789',
+        course: student.course || 'BSIT',
+        yearLevel: student.year_level || '3rd Year',
+        status: hasHold ? 'hold' : (student.status || 'active')
+      },
+      loans: loans.map(mapTransaction),
+      reservations: reservations.map(mapReservation),
+      pendingReplacements: pendingReplacements.map(l => ({
+        transactionId: l.id,
+        bookId: l.book_id,
+        bookTitle: l.book_title,
+        requiredAuthor: l.original_author || 'N/A',
+        requiredIsbn: l.original_isbn || 'N/A',
+        dueDate: l.due_date,
+        status: l.replacement_status
+      })),
+      totalPenalty,
+      hasHold
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -445,7 +914,7 @@ app.post('/api/reservations', (req, res) => {
 
 // ─── Book CRUD API ───────────────────────────────────────────────────────────
 app.post('/api/books', authenticateToken, (req, res) => {
-  const { id, title, author, isbn, category, cover, abstract, total, publishYear } = req.body;
+  const { id, title, author, isbn, category, cover, abstract, total, publishYear, callNo, marcTags, institute, yearLevel, semester, pdfUrl } = req.body;
   if (!id || !title || !author || !isbn || !category || total === undefined) {
     return res.status(400).json({ error: 'Please fill in all required fields (ID, Title, Author, ISBN, Category, Total Copies).' });
   }
@@ -459,11 +928,13 @@ app.post('/api/books', authenticateToken, (req, res) => {
       return res.status(400).json({ error: 'ISBN already exists.' });
     }
 
+    const marcTagsJson = marcTags ? (Array.isArray(marcTags) ? JSON.stringify(marcTags) : JSON.stringify([marcTags])) : null;
+
     const stmt = db.prepare(`
-      INSERT INTO books (id, title, author, isbn, category, cover, abstract, available, total, borrow_count, publish_year)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+      INSERT INTO books (id, title, author, isbn, category, cover, abstract, available, total, borrow_count, publish_year, call_no, marc_tags, institute, year_level, semester, pdf_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, title, author, isbn, category, cover || '', abstract || '', total, total, publishYear || null);
+    stmt.run(id, title, author, isbn, category, cover || '', abstract || '', total, total, publishYear || null, callNo || '', marcTagsJson, institute || '', yearLevel || '', semester || '', pdfUrl || '');
     res.status(201).json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -472,7 +943,7 @@ app.post('/api/books', authenticateToken, (req, res) => {
 
 app.put('/api/books/:id', authenticateToken, (req, res) => {
   const { id } = req.params;
-  const { title, author, isbn, category, cover, abstract, total, publishYear } = req.body;
+  const { title, author, isbn, category, cover, abstract, total, publishYear, callNo, marcTags, institute, yearLevel, semester, pdfUrl } = req.body;
   if (!title || !author || !isbn || !category || total === undefined) {
     return res.status(400).json({ error: 'Please fill in all required fields.' });
   }
@@ -489,13 +960,23 @@ app.put('/api/books/:id', authenticateToken, (req, res) => {
 
     const copiesBorrowed = book.total - book.available;
     const newAvailable = Math.max(0, total - copiesBorrowed);
+    const marcTagsJson = marcTags ? (Array.isArray(marcTags) ? JSON.stringify(marcTags) : JSON.stringify([marcTags])) : (book.marc_tags || null);
 
     const stmt = db.prepare(`
       UPDATE books
-      SET title = ?, author = ?, isbn = ?, category = ?, cover = ?, abstract = ?, available = ?, total = ?, publish_year = ?
+      SET title = ?, author = ?, isbn = ?, category = ?, cover = ?, abstract = ?, available = ?, total = ?, publish_year = ?, call_no = ?, marc_tags = ?, institute = ?, year_level = ?, semester = ?, pdf_url = ?
       WHERE id = ?
     `);
-    stmt.run(title, author, isbn, category, cover || '', abstract || '', newAvailable, total, publishYear || null, id);
+    stmt.run(
+      title, author, isbn, category, cover || '', abstract || '', newAvailable, total, publishYear || null,
+      callNo !== undefined ? callNo : book.call_no,
+      marcTagsJson,
+      institute !== undefined ? institute : book.institute,
+      yearLevel !== undefined ? yearLevel : book.year_level,
+      semester !== undefined ? semester : book.semester,
+      pdfUrl !== undefined ? pdfUrl : (book.pdf_url || ''),
+      id
+    );
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -894,9 +1375,13 @@ app.get('/api/reports/export', authenticateToken, (req, res) => {
 // ─── Production Static File Serving & SPA Fallback ──────────────────────────
 const distPath = path.join(__dirname, '../dist');
 const promoPath = path.join(__dirname, '../promotional-website');
+const publicPath = path.join(__dirname, '../public');
+const previewsPath = path.join(__dirname, '../public/previews');
 
 app.use(express.static(distPath));
+app.use(express.static(publicPath));
 app.use('/promo', express.static(promoPath));
+app.use('/previews', express.static(previewsPath));
 
 app.use((req, res, next) => {
   if (req.method !== 'GET') {

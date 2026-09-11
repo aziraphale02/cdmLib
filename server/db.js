@@ -13,8 +13,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = path.resolve(__dirname, '../library.db');
 const db = new Database(dbPath);
 
-// Enable foreign keys
+// Enable foreign keys and high-throughput WAL mode for high concurrency
 db.pragma('foreign_keys = ON');
+db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL');
+db.pragma('cache_size = -64000'); // 64MB memory page cache
+db.pragma('temp_store = MEMORY');
 
 // Create tables
 db.exec(`
@@ -58,6 +62,9 @@ db.exec(`
     status TEXT NOT NULL,
     book_condition TEXT,
     penalty REAL DEFAULT 0,
+    replacement_status TEXT DEFAULT 'not_applicable',
+    replacement_verified_by INTEGER REFERENCES librarians(id),
+    replacement_verified_at TEXT,
     FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
   );
 
@@ -82,7 +89,58 @@ db.exec(`
     year_level TEXT,
     status TEXT DEFAULT 'active'
   );
+
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT NOT NULL,
+    ip_address TEXT,
+    user_id TEXT,
+    user_role TEXT,
+    action TEXT NOT NULL,
+    resource TEXT,
+    status TEXT DEFAULT 'SUCCESS',
+    details TEXT
+  );
 `);
+
+// Database Migration Check for existing transactions table
+const txnColumns = db.prepare("PRAGMA table_info(transactions)").all().map(c => c.name);
+if (!txnColumns.includes('replacement_status')) {
+  db.exec("ALTER TABLE transactions ADD COLUMN replacement_status TEXT DEFAULT 'not_applicable'");
+}
+if (!txnColumns.includes('replacement_verified_by')) {
+  db.exec("ALTER TABLE transactions ADD COLUMN replacement_verified_by INTEGER REFERENCES librarians(id)");
+}
+if (!txnColumns.includes('replacement_verified_at')) {
+  db.exec("ALTER TABLE transactions ADD COLUMN replacement_verified_at TEXT");
+}
+
+// Database Migration Check for books table
+const bookColumns = db.prepare("PRAGMA table_info(books)").all().map(c => c.name);
+if (!bookColumns.includes('call_no')) {
+  db.exec("ALTER TABLE books ADD COLUMN call_no TEXT");
+}
+if (!bookColumns.includes('marc_tags')) {
+  db.exec("ALTER TABLE books ADD COLUMN marc_tags TEXT");
+}
+if (!bookColumns.includes('institute')) {
+  db.exec("ALTER TABLE books ADD COLUMN institute TEXT");
+}
+if (!bookColumns.includes('year_level')) {
+  db.exec("ALTER TABLE books ADD COLUMN year_level TEXT");
+}
+if (!bookColumns.includes('semester')) {
+  db.exec("ALTER TABLE books ADD COLUMN semester TEXT");
+}
+if (!bookColumns.includes('pdf_url')) {
+  db.exec("ALTER TABLE books ADD COLUMN pdf_url TEXT");
+}
+
+// Database Migration Check for students table
+const studentColumns = db.prepare("PRAGMA table_info(students)").all().map(c => c.name);
+if (!studentColumns.includes('password')) {
+  db.exec("ALTER TABLE students ADD COLUMN password TEXT");
+}
 
 // Seed default data if empty
 const librarianCount = db.prepare('SELECT COUNT(*) AS count FROM librarians').get();

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import QRCode from "qrcode";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import libraryBrandImg from "@/imports/672249359_1247900927325779_3798022234977448862_n.jpg";
 import {
@@ -7,7 +8,7 @@ import {
   TrendingUp, Users, BookMarked, Eye, EyeOff, Shield, Star, Printer, X, Plus,
   ArrowRight, Info, Hash, Check, ChevronRight, Quote, GraduationCap,
   ChevronLeft, AlertCircle, Menu, BookX, Library, Filter, Loader2,
-  Edit, Trash,
+  Edit, Trash, Tag, SlidersHorizontal, Layers, Copy, CheckCircle2, Smartphone
 } from "lucide-react";
 
 // ─── Global Fetch Interceptor for JWT ─────────────────────────────────────────
@@ -47,6 +48,12 @@ interface Book {
   total: number;
   borrowCount: number;
   publishYear: number;
+  callNo?: string;
+  institute?: string;
+  yearLevel?: string;
+  semester?: string;
+  marcTags?: string[];
+  pdfUrl?: string;
 }
 
 interface Transaction {
@@ -59,7 +66,12 @@ interface Transaction {
   borrowDate: string;
   dueDate: string;
   returnDate?: string;
-  status: "active" | "returned" | "overdue" | "lost";
+  status: "active" | "returned" | "overdue" | "lost" | "closed" | "pending_fines";
+  bookCondition?: string;
+  penalty?: number;
+  replacementStatus?: "not_applicable" | "pending" | "submitted" | "verified";
+  replacementVerifiedBy?: number;
+  replacementVerifiedAt?: string;
 }
 
 interface Reservation {
@@ -70,7 +82,7 @@ interface Reservation {
   studentId: string;
   reservationDate: string;
   pickupDate: string;
-  status: "pending" | "fulfilled" | "cancelled";
+  status: "pending" | "ready" | "cancelled" | "fulfilled";
 }
 
 interface Student {
@@ -80,25 +92,50 @@ interface Student {
   phone: string;
   course: string;
   yearLevel: string;
-  status: "active" | "suspended";
+  status: "active" | "inactive" | "graduated" | "hold";
+}
+
+interface Librarian {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  employeeId: string;
+  role: string;
+  username: string;
+  status: "active" | "pending" | "rejected";
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DAILY_QUOTES = [
   { text: "A reader lives a thousand lives before he dies. The man who never reads lives only one.", author: "George R.R. Martin" },
-  { text: "Reading is essential for those who seek to rise above the ordinary.", author: "Jim Rohn" },
-  { text: "Not all readers are leaders, but all leaders are readers.", author: "Harry S. Truman" },
-  { text: "The more that you read, the more things you will know. The more that you learn, the more places you'll go.", author: "Dr. Seuss" },
-  { text: "Today a reader, tomorrow a leader.", author: "Margaret Fuller" },
+  { text: "Libraries store the energy that fuels the imagination. They open up windows to the world.", author: "Sidney Sheldon" },
+  { text: "The only thing that you absolutely have to know, is the location of the library.", author: "Albert Einstein" },
+  { text: "When in doubt, go to the library.", author: "J.K. Rowling" },
   { text: "Books are a uniquely portable magic.", author: "Stephen King" },
+  { text: "Knowledge is power. Information is liberating. Education is the premise of progress.", author: "Kofi Annan" },
+  { text: "Today a reader, tomorrow a leader.", author: "Margaret Fuller" }
 ];
 
 const TODAY_QUOTE = DAILY_QUOTES[new Date().getDay() % DAILY_QUOTES.length];
 
-const CATEGORIES = ["All", "Literature", "History", "Science", "Mathematics", "Technology", "Philosophy", "Social Studies"];
+const INSTITUTES = [
+  { code: "All", name: "All Institutes", badgeBg: "bg-gray-100", badgeText: "text-gray-700" },
+  { code: "ICS", name: "ICS (Computer Studies & CpE)", badgeBg: "bg-emerald-100", badgeText: "text-emerald-800", color: "#106A2E" },
+  { code: "ITE", name: "ITE (Teacher Education & GenEd)", badgeBg: "bg-orange-100", badgeText: "text-orange-800", color: "#C2410C" },
+  { code: "IBE", name: "IBE (Business & Entrep)", badgeBg: "bg-blue-100", badgeText: "text-blue-800", color: "#1E40AF" }
+];
 
-// ─── Database Sync / State Fallbacks ──────────────────────────────────────────
-// Mock data is now stored and fetched dynamically from the SQLite database.
+const YEAR_LEVELS = ["All Years", "1st Year", "2nd Year", "3rd Year", "4th Year"];
+const SEMESTERS = ["All Semesters", "1st Sem", "2nd Sem"];
+
+const CATEGORIES = [
+  "All",
+  "Computer Studies & Engineering (ICS - BSIT / BSCPE)",
+  "Teacher Education & GenEd (ITE - BEED / BTLED / BECED / BSED)",
+  "Business & Entrepreneurship (IBE - BSBA / BS ENTREP)"
+];
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function getDueDaysLeft(dueDate: string) {
@@ -124,38 +161,44 @@ function getDueDate(borrowDate: string, days = 7) {
   return d.toISOString().split("T")[0];
 }
 
-// ─── QR Code Component ────────────────────────────────────────────────────────
-function QRCodeVisual({ data }: { data: string }) {
-  const size = 21;
-  const seed = data.split("").reduce((a, c) => a * 31 + c.charCodeAt(0), 7);
-  const cells = useMemo(() => {
-    const grid: boolean[][] = [];
-    for (let r = 0; r < size; r++) {
-      const row: boolean[] = [];
-      for (let c = 0; c < size; c++) {
-        const inTL = r < 7 && c < 7;
-        const inTR = r < 7 && c >= size - 7;
-        const inBL = r >= size - 7 && c < 7;
-        if (inTL || inTR || inBL) {
-          const lr = inTL ? r : inTR ? r : r - (size - 7);
-          const lc = inTL ? c : inTR ? c - (size - 7) : c;
-          row.push((lr === 0 || lr === 6 || lc === 0 || lc === 6) || (lr >= 2 && lr <= 4 && lc >= 2 && lc <= 4));
-        } else {
-          const h = ((seed * (r + 3) * (c + 7) + r * 97 + c * 53) >>> 0) % 100;
-          row.push(h < 52);
-        }
-      }
-      grid.push(row);
+// ─── Real Dynamic QR Code Component ─────────────────────────────────────────
+function QRCodeVisual({ data, size = 120 }: { data: string; size?: number }) {
+  const [dataUrl, setDataUrl] = useState<string>("");
+
+  useEffect(() => {
+    let isMounted = true;
+    if (data) {
+      QRCode.toDataURL(data, {
+        width: size * 2,
+        margin: 1,
+        color: { dark: "#000000", light: "#FFFFFF" },
+        errorCorrectionLevel: "M"
+      })
+        .then((url) => {
+          if (isMounted) setDataUrl(url);
+        })
+        .catch((err) => console.error("QR Render Error:", err));
     }
-    return grid;
-  }, [seed]);
-  return (
-    <div className="p-3 bg-white rounded-lg border border-gray-200 inline-block">
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${size}, 8px)` }}>
-        {cells.map((row, r) => row.map((cell, c) => (
-          <div key={`${r}-${c}`} style={{ width: 8, height: 8, backgroundColor: cell ? "#1F1F1F" : "#FFFFFF" }} />
-        )))}
+    return () => {
+      isMounted = false;
+    };
+  }, [data, size]);
+
+  if (!dataUrl) {
+    return (
+      <div className="p-3 bg-white rounded-xl border border-gray-200 inline-flex items-center justify-center shadow-xs" style={{ width: size, height: size }}>
+        <QrCode className="w-12 h-12 text-gray-400 animate-pulse" />
       </div>
+    );
+  }
+
+  return (
+    <div className="p-2.5 bg-white rounded-xl border border-gray-200 inline-block shadow-xs">
+      <img
+        src={dataUrl}
+        alt={`QR Code: ${data}`}
+        style={{ width: size, height: size, display: "block", borderRadius: 8, imageRendering: "pixelated" }}
+      />
     </div>
   );
 }
@@ -213,57 +256,87 @@ function BookCard({ book, onPreview, onBorrow, onEdit, onDelete }: {
   onEdit: (b: Book) => void;
   onDelete: (b: Book) => void;
 }) {
+  const instObj = INSTITUTES.find(i => i.code === book.institute);
+
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-border hover:shadow-md transition-shadow group overflow-hidden">
-      <div className="relative h-44 overflow-hidden bg-gray-100">
-        <ImageWithFallback
-          src={book.cover}
-          alt={book.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-        />
-        <div className="absolute top-2 right-2">
-          {book.available > 0
-            ? <Badge variant="success"><Check className="w-2.5 h-2.5" /> {book.available} Available</Badge>
-            : <Badge variant="danger"><X className="w-2.5 h-2.5" /> Unavailable</Badge>}
+    <div className="bg-white rounded-xl shadow-sm border border-border hover:shadow-md transition-shadow group overflow-hidden flex flex-col justify-between">
+      <div>
+        <div className="relative h-44 overflow-hidden bg-gray-100">
+          <ImageWithFallback
+            src={book.cover}
+            alt={book.title}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          />
+          <div className="absolute top-2 right-2">
+            {book.available > 0
+              ? <Badge variant="success"><Check className="w-2.5 h-2.5" /> {book.available} Available</Badge>
+              : <Badge variant="danger"><X className="w-2.5 h-2.5" /> Unavailable</Badge>}
+          </div>
+          <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
+            {book.institute ? (
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shadow-sm ${instObj?.badgeBg || "bg-gray-100"} ${instObj?.badgeText || "text-gray-800"}`}>
+                {book.institute}
+              </span>
+            ) : (
+              <Badge variant="default">{book.category}</Badge>
+            )}
+            {book.yearLevel && (
+              <span className="px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-xs text-white text-[9px] font-medium">
+                {book.yearLevel} {book.semester ? `· ${book.semester}` : ""}
+              </span>
+            )}
+          </div>
+          <div className="absolute bottom-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(book); }}
+              className="p-1.5 bg-white hover:bg-gray-100 text-gray-700 rounded-md shadow-sm transition-colors border border-gray-200 cursor-pointer"
+              title="Edit Book"
+            >
+              <Edit className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(book); }}
+              className="p-1.5 bg-white hover:bg-red-50 text-red-600 rounded-md shadow-sm transition-colors border border-gray-200 cursor-pointer"
+              title="Delete Book"
+            >
+              <Trash className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
-        <div className="absolute top-2 left-2">
-          <Badge variant="default">{book.category}</Badge>
-        </div>
-        <div className="absolute bottom-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={(e) => { e.stopPropagation(); onEdit(book); }}
-            className="p-1.5 bg-white hover:bg-gray-100 text-gray-700 rounded-md shadow-sm transition-colors border border-gray-200 cursor-pointer"
-            title="Edit Book"
-          >
-            <Edit className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(book); }}
-            className="p-1.5 bg-white hover:bg-red-50 text-red-600 rounded-md shadow-sm transition-colors border border-gray-200 cursor-pointer"
-            title="Delete Book"
-          >
-            <Trash className="w-3.5 h-3.5" />
-          </button>
+        <div className="p-4">
+          {book.callNo && (
+            <div className="flex items-center gap-1 text-[11px] font-mono text-[#106A2E] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 mb-2 w-fit">
+              <Tag className="w-2.5 h-2.5" /> {book.callNo}
+            </div>
+          )}
+          <h3 className="font-semibold text-sm text-foreground line-clamp-2 leading-snug mb-1">{book.title}</h3>
+          <p className="text-xs text-muted-foreground mb-2">{book.author} · {book.publishYear}</p>
+          <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
+            <div className="flex items-center gap-1">
+              <Star className="w-3 h-3 fill-[#F4D35E] text-[#F4D35E]" />
+              <span>{book.borrowCount} borrows</span>
+            </div>
+            {book.marcTags && book.marcTags.length > 0 && (
+              <span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                MARC 21
+              </span>
+            )}
+          </div>
         </div>
       </div>
-      <div className="p-4">
-        <h3 className="font-semibold text-sm text-foreground line-clamp-2 leading-snug mb-1">{book.title}</h3>
-        <p className="text-xs text-muted-foreground mb-3">{book.author} · {book.publishYear}</p>
-        <div className="flex items-center gap-1 mb-3">
-          <Star className="w-3 h-3 fill-[#F4D35E] text-[#F4D35E]" />
-          <span className="text-xs text-muted-foreground">{book.borrowCount} borrows</span>
-        </div>
+
+      <div className="px-4 pb-4">
         <div className="flex gap-2">
           <button
             onClick={() => onPreview(book)}
-            className="flex-1 text-xs py-1.5 px-2 rounded-md border border-[#106A2E] text-[#106A2E] hover:bg-[#106A2E]/5 transition-colors flex items-center justify-center gap-1"
+            className="flex-1 text-xs py-1.5 px-2 rounded-md border border-[#106A2E] text-[#106A2E] hover:bg-[#106A2E]/5 transition-colors flex items-center justify-center gap-1 cursor-pointer font-medium"
           >
             <Eye className="w-3 h-3" /> Preview
           </button>
           <button
             onClick={() => onBorrow(book)}
             disabled={book.available === 0}
-            className="flex-1 text-xs py-1.5 px-2 rounded-md bg-[#106A2E] text-white hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+            className="flex-1 text-xs py-1.5 px-2 rounded-md bg-[#106A2E] text-white hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1 cursor-pointer font-medium"
           >
             <BookMarked className="w-3 h-3" /> Borrow
           </button>
@@ -283,7 +356,7 @@ function QRReceiptModal({ txn, book, onClose }: { txn: Omit<Transaction, "id"> &
             <p className="text-[#F4D35E] text-xs font-medium uppercase tracking-widest">Library Receipt</p>
             <h2 className="text-white font-bold text-lg">Colegio de Montalban</h2>
           </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
+          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -327,16 +400,16 @@ function QRReceiptModal({ txn, book, onClose }: { txn: Omit<Transaction, "id"> &
           </div>
           <div className="bg-[#F4D35E]/20 border border-[#F4D35E] rounded-lg p-3 text-xs text-center text-[#7a6500] mb-4">
             <Shield className="w-4 h-4 inline mr-1" />
-            Please return the book on or before the due date. Late returns incur ₱5/day penalty.
+            Please return the book on or before the due date. Overdue items will trigger an automated SMS return reminder (no daily cash fine).
           </div>
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="flex-1 py-2.5 px-4 border border-[#106A2E] text-[#106A2E] rounded-lg text-sm font-medium hover:bg-[#106A2E]/5 transition-colors"
+              className="flex-1 py-2.5 px-4 border border-[#106A2E] text-[#106A2E] rounded-lg text-sm font-medium hover:bg-[#106A2E]/5 transition-colors cursor-pointer"
             >
               Close
             </button>
-            <button className="flex-1 py-2.5 px-4 bg-[#106A2E] text-white rounded-lg text-sm font-medium hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2">
+            <button className="flex-1 py-2.5 px-4 bg-[#106A2E] text-white rounded-lg text-sm font-medium hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2 cursor-pointer">
               <Printer className="w-4 h-4" /> Print Receipt
             </button>
           </div>
@@ -346,7 +419,7 @@ function QRReceiptModal({ txn, book, onClose }: { txn: Omit<Transaction, "id"> &
   );
 }
 
-// ─── Book Preview Modal ───────────────────────────────────────────────────────
+// ─── Book Preview Modal (With MARC 21 Viewer) ─────────────────────────────────
 function BookPreviewModal({ book, onClose, onBorrow, onEdit, onDelete }: {
   book: Book;
   onClose: () => void;
@@ -354,72 +427,271 @@ function BookPreviewModal({ book, onClose, onBorrow, onEdit, onDelete }: {
   onEdit: (b: Book) => void;
   onDelete: (b: Book) => void;
 }) {
+  const [activeTab, setActiveTab] = useState<"details" | "marc" | "pdf">("details");
+  const [copiedMarc, setCopiedMarc] = useState(false);
+
+  const instObj = INSTITUTES.find(i => i.code === book.institute);
+
+  const marcLines = useMemo(() => {
+    if (book.marcTags && book.marcTags.length > 0) {
+      return book.marcTags;
+    }
+    return [
+      `MARC 020 (ISBN): ${book.isbn}`,
+      `MARC 082 (Call Number): ${book.callNo || "000 CDM"}`,
+      `MARC 100 (Main Entry - Author): ${book.author}`,
+      `MARC 245 (Title Statement): ${book.title}`,
+      `MARC 260 (Publication): Colegio de Montalban Library, ${book.publishYear}`,
+      `MARC 650 (Subject Term): ${book.category}`,
+      `MARC 990 (Local Tag): #${book.institute || "ITE"} #${(book.yearLevel || "").replace(" ", "")} #${(book.semester || "").replace(" ", "")}`
+    ];
+  }, [book]);
+
+  function handleCopyMarc() {
+    const text = marcLines.join("\n");
+    navigator.clipboard.writeText(text);
+    setCopiedMarc(true);
+    setTimeout(() => setCopiedMarc(false), 2000);
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden">
-        <div className="relative h-40 bg-[#106A2E] overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[92vh]">
+        <div className="relative h-44 bg-[#106A2E] overflow-hidden flex-shrink-0">
           <ImageWithFallback
             src={book.cover}
             alt={book.title}
-            className="w-full h-full object-cover opacity-30"
+            className="w-full h-full object-cover opacity-25"
           />
-          <div className="absolute inset-0 flex items-end p-6">
+          <div className="absolute inset-0 flex items-end p-6 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
             <div>
-              <Badge variant="default">{book.category}</Badge>
-              <h2 className="text-white text-2xl font-bold font-display mt-2 leading-tight">{book.title}</h2>
-              <p className="text-white/80 text-sm">{book.author} · {book.publishYear}</p>
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                {book.institute && (
+                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${instObj?.badgeBg || "bg-white"} ${instObj?.badgeText || "text-emerald-900"}`}>
+                    {book.institute}
+                  </span>
+                )}
+                {book.yearLevel && (
+                  <span className="px-2 py-0.5 rounded bg-white/20 text-white text-xs font-medium backdrop-blur-xs">
+                    {book.yearLevel} {book.semester ? `· ${book.semester}` : ""}
+                  </span>
+                )}
+                <span className="px-2 py-0.5 rounded bg-black/40 text-emerald-300 font-mono text-xs">
+                  {book.callNo || book.id}
+                </span>
+                {book.pdfUrl && (
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/90 text-white font-bold text-[10px] flex items-center gap-1">
+                    <FileText className="w-3 h-3" /> PDF AVAILABLE
+                  </span>
+                )}
+              </div>
+              <h2 className="text-white text-xl md:text-2xl font-bold font-display leading-tight line-clamp-2">{book.title}</h2>
+              <p className="text-white/80 text-xs md:text-sm mt-0.5">{book.author} · {book.publishYear}</p>
             </div>
           </div>
-          <button onClick={onClose} className="absolute top-4 right-4 bg-white/20 hover:bg-white/30 transition-colors rounded-full p-2 text-white">
+          <button onClick={onClose} className="absolute top-4 right-4 bg-black/40 hover:bg-black/60 transition-colors rounded-full p-2 text-white cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="p-6">
-          <div className="grid grid-cols-3 gap-4 mb-6 p-4 bg-gray-50 rounded-xl">
-            <div className="text-center">
-              <p className="text-xs text-muted-foreground">ISBN</p>
-              <p className="font-mono text-xs font-semibold mt-0.5">{book.isbn}</p>
+
+        {/* Navigation Tabs */}
+        <div className="flex border-b border-border bg-gray-50/80 px-6 pt-2">
+          <button
+            onClick={() => setActiveTab("details")}
+            className={`pb-2.5 px-4 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${activeTab === "details" ? "border-[#106A2E] text-[#106A2E]" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            <BookOpen className="w-3.5 h-3.5" /> Book Overview
+          </button>
+          <button
+            onClick={() => setActiveTab("marc")}
+            className={`pb-2.5 px-4 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${activeTab === "marc" ? "border-[#106A2E] text-[#106A2E]" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            <Tag className="w-3.5 h-3.5" /> MARC 21 Record Format
+          </button>
+          <button
+            onClick={() => setActiveTab("pdf")}
+            className={`pb-2.5 px-4 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${activeTab === "pdf" ? "border-[#106A2E] text-[#106A2E]" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            <FileText className="w-3.5 h-3.5" /> PDF Chapter Preview
+            {book.pdfUrl && <span className="w-2 h-2 rounded-full bg-emerald-500" />}
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto flex-1 text-left space-y-4">
+          {activeTab === "details" && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3.5 bg-gray-50 rounded-xl border border-gray-100">
+                <div className="text-center md:text-left">
+                  <p className="text-[11px] text-muted-foreground uppercase font-medium">Call Number</p>
+                  <p className="font-mono text-xs font-bold text-[#106A2E] mt-0.5 truncate">{book.callNo || "N/A"}</p>
+                </div>
+                <div className="text-center md:text-left border-l border-border pl-3">
+                  <p className="text-[11px] text-muted-foreground uppercase font-medium">ISBN</p>
+                  <p className="font-mono text-xs font-semibold text-foreground mt-0.5 truncate">{book.isbn}</p>
+                </div>
+                <div className="text-center md:text-left border-l border-border pl-3">
+                  <p className="text-[11px] text-muted-foreground uppercase font-medium">Availability</p>
+                  <p className="font-bold text-xs mt-0.5" style={{ color: book.available > 0 ? "#106A2E" : "#c0392b" }}>
+                    {book.available} / {book.total} Copies
+                  </p>
+                </div>
+                <div className="text-center md:text-left border-l border-border pl-3">
+                  <p className="text-[11px] text-muted-foreground uppercase font-medium">Curriculum</p>
+                  <p className="font-semibold text-xs text-foreground mt-0.5 truncate">
+                    {book.institute ? `${book.institute} ${book.yearLevel ? `(${book.yearLevel})` : ""}` : book.category}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-xs text-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5 text-muted-foreground">
+                  <BookOpen className="w-3.5 h-3.5 text-[#106A2E]" /> Abstract & Subject Scope
+                </h3>
+                <p className="text-xs md:text-sm text-muted-foreground leading-relaxed bg-white p-3 rounded-lg border border-gray-100">
+                  {book.abstract || "No abstract provided for this reference material."}
+                </p>
+              </div>
+
+              <div className="bg-emerald-50/70 border border-emerald-200/60 rounded-lg p-3 text-xs text-emerald-900 flex items-start gap-2.5">
+                <Shield className="w-4 h-4 text-[#106A2E] flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold">Library Policy Reminder</p>
+                  <p className="text-emerald-800 text-[11px] mt-0.5">
+                    Assigned for academic use. Late returns trigger automated SMS warning alerts (no daily cash fine). In case of lost books, students must submit a verified identical physical replacement copy (same title, author, edition) before clearing account hold.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === "marc" && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5 text-[#106A2E]" /> MARC 21 Bibliographic Record Tags
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground">Official machine-readable cataloging standards for CDM Library</p>
+                </div>
+                <button
+                  onClick={handleCopyMarc}
+                  className="px-2.5 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-800 rounded flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  {copiedMarc ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  {copiedMarc ? "Copied!" : "Copy MARC"}
+                </button>
+              </div>
+
+              <div className="bg-slate-900 text-slate-100 rounded-xl p-4 font-mono text-xs space-y-2 border border-slate-800 overflow-x-auto shadow-inner">
+                {marcLines.map((line, idx) => {
+                  const parts = line.split(":");
+                  const tagHeader = parts[0] || "";
+                  const tagValue = parts.slice(1).join(":").trim();
+                  return (
+                    <div key={idx} className="flex gap-2 hover:bg-slate-800/60 px-1 py-0.5 rounded">
+                      <span className="text-emerald-400 font-bold select-all flex-shrink-0">{tagHeader}:</span>
+                      <span className="text-slate-200 select-all">{tagValue}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="text-[11px] text-muted-foreground bg-gray-50 p-2.5 rounded border border-gray-200">
+                <span className="font-semibold text-gray-700">MARC Legend:</span> 020 (ISBN) · 082 (Dewey/LC Classification) · 100 (Primary Author) · 245 (Title Statement) · 260 (Publication) · 650 (Topical Subject) · 990 (Local Institute/Curriculum Tag).
+              </div>
             </div>
-            <div className="text-center border-x border-border">
-              <p className="text-xs text-muted-foreground">Availability</p>
-              <p className="font-bold text-sm mt-0.5" style={{ color: book.available > 0 ? "#106A2E" : "#c0392b" }}>
-                {book.available}/{book.total} copies
-              </p>
+          )}
+
+          {activeTab === "pdf" && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5 text-[#106A2E]" /> Digital Curriculum & Chapter Preview
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground">Read official syllabus chapters and excerpts</p>
+                </div>
+                {book.pdfUrl ? (
+                  <a
+                    href={book.pdfUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-1 text-xs bg-emerald-50 hover:bg-emerald-100 text-[#106A2E] border border-emerald-300 font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Fullscreen / Download PDF
+                  </a>
+                ) : (
+                  <a
+                    href="/previews/sample_preview.pdf"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg flex items-center gap-1.5 transition-colors"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> View Sample Curriculum PDF
+                  </a>
+                )}
+              </div>
+
+              {book.pdfUrl ? (
+                <div className="w-full h-[460px] bg-slate-100 rounded-xl overflow-hidden border border-border shadow-inner">
+                  <iframe
+                    src={book.pdfUrl}
+                    className="w-full h-full"
+                    title={`${book.title} PDF Preview`}
+                  />
+                </div>
+              ) : (
+                <div className="border border-dashed border-gray-300 rounded-xl p-6 text-center bg-gray-50/50 space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-emerald-100 text-[#106A2E] flex items-center justify-center mx-auto">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-gray-800">No Custom PDF Attached Yet</p>
+                    <p className="text-[11px] text-gray-500 max-w-md mx-auto mt-1">
+                      You can drop any PDF file in the <code className="bg-gray-200 px-1 py-0.5 rounded text-[10px]">public/previews/</code> directory and specify <code className="bg-gray-200 px-1 py-0.5 rounded text-[10px]">/previews/your_file.pdf</code> in Edit Book, or preview the default syllabus sample below.
+                    </p>
+                  </div>
+                  <div className="pt-1 flex justify-center gap-2">
+                    <a
+                      href="/previews/sample_preview.pdf"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3.5 py-2 bg-[#106A2E] text-white text-xs font-semibold rounded-lg hover:bg-[#0D7856] transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Open Standard CDM Preview Document
+                    </a>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="text-center">
-              <p className="text-xs text-muted-foreground">Total Borrows</p>
-              <p className="font-bold text-sm mt-0.5 text-foreground">{book.borrowCount}×</p>
-            </div>
-          </div>
-          <h3 className="font-semibold text-sm text-foreground mb-2 flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-[#106A2E]" /> Abstract
-          </h3>
-          <p className="text-sm text-muted-foreground leading-relaxed mb-6">{book.abstract}</p>
-          <div className="flex gap-3">
-            <button onClick={onClose} className="py-2.5 px-4 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors">
-              Close
-            </button>
-            <button
-              onClick={() => { onEdit(book); onClose(); }}
-              className="py-2.5 px-4 border border-[#106A2E] text-[#106A2E] rounded-lg text-sm hover:bg-[#106A2E]/5 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Edit className="w-4 h-4" /> Edit
-            </button>
-            <button
-              onClick={() => { onDelete(book); onClose(); }}
-              className="py-2.5 px-4 border border-red-500 text-red-500 rounded-lg text-sm hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Trash className="w-4 h-4" /> Delete
-            </button>
-            <button
-              onClick={() => { onBorrow(book); onClose(); }}
-              disabled={book.available === 0}
-              className="flex-grow py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-medium hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <BookMarked className="w-4 h-4" />
-              {book.available > 0 ? "Borrow" : "Unavailable"}
-            </button>
-          </div>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="p-4 bg-gray-50 border-t border-border flex gap-3 flex-shrink-0">
+          <button onClick={onClose} className="py-2 px-4 border border-border text-muted-foreground rounded-lg text-xs font-medium hover:bg-white transition-colors cursor-pointer">
+            Close
+          </button>
+          <button
+            onClick={() => { onEdit(book); onClose(); }}
+            className="py-2 px-3.5 border border-[#106A2E] text-[#106A2E] rounded-lg text-xs font-medium hover:bg-[#106A2E]/5 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Edit className="w-3.5 h-3.5" /> Edit
+          </button>
+          <button
+            onClick={() => { onDelete(book); onClose(); }}
+            className="py-2 px-3.5 border border-red-500 text-red-500 rounded-lg text-xs font-medium hover:bg-red-50 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Trash className="w-3.5 h-3.5" /> Delete
+          </button>
+          <button
+            onClick={() => { onBorrow(book); onClose(); }}
+            disabled={book.available === 0}
+            className="flex-grow py-2 bg-[#106A2E] text-white rounded-lg text-xs font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+          >
+            <BookMarked className="w-4 h-4" />
+            {book.available > 0 ? "Borrow Book" : "Unavailable"}
+          </button>
         </div>
       </div>
     </div>
@@ -895,57 +1167,207 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
   onDelete: (b: Book) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [selectedInstitute, setSelectedInstitute] = useState("All");
+  const [selectedYear, setSelectedYear] = useState("All Years");
+  const [selectedSemester, setSelectedSemester] = useState("All Semesters");
   const [category, setCategory] = useState("All");
 
+  const instituteCounts = useMemo(() => {
+    const counts: Record<string, number> = { All: books.length };
+    books.forEach(b => {
+      const inst = (b.institute === "GENED" ? "ITE" : b.institute) || "ITE";
+      counts[inst] = (counts[inst] || 0) + 1;
+    });
+    return counts;
+  }, [books]);
+
   const filtered = books.filter(b => {
+    // Institute Match
+    const bookInst = (b.institute === "GENED" ? "ITE" : b.institute) || "ITE";
+    const matchInst = selectedInstitute === "All" || bookInst === selectedInstitute;
+    
+    // Year Match
+    const matchYear = selectedYear === "All Years" || b.yearLevel === selectedYear;
+
+    // Semester Match
+    const matchSem = selectedSemester === "All Semesters" || b.semester === selectedSemester;
+
+    // Category Match
     const matchCat = category === "All" || b.category === category;
-    const matchSearch = !search || b.title.toLowerCase().includes(search.toLowerCase()) || b.author.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
+
+    // Keyword Search
+    const q = search.toLowerCase();
+    const matchSearch = !search || 
+      b.title.toLowerCase().includes(q) || 
+      b.author.toLowerCase().includes(q) ||
+      b.isbn.toLowerCase().includes(q) ||
+      (b.callNo && b.callNo.toLowerCase().includes(q)) ||
+      (b.marcTags && b.marcTags.some(t => t.toLowerCase().includes(q)));
+
+    return matchInst && matchYear && matchSem && matchCat && matchSearch;
   });
+
+  const hasActiveFilters = selectedInstitute !== "All" || selectedYear !== "All Years" || selectedSemester !== "All Semesters" || category !== "All" || search !== "";
+
+  function handleResetFilters() {
+    setSelectedInstitute("All");
+    setSelectedYear("All Years");
+    setSelectedSemester("All Semesters");
+    setCategory("All");
+    setSearch("");
+  }
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="font-bold text-lg text-foreground">Book Collection</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Manage and search books in the library catalog.</p>
+          <h2 className="font-bold text-lg text-foreground">CDM Library Book Collection</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Prescribed academic references with official MARC 21 catalog tagging across all institutes.
+          </p>
         </div>
-        <button
-          onClick={onAdd}
-          className="bg-[#106A2E] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-2 shadow cursor-pointer"
-        >
-          <Plus className="w-4 h-4" /> Add Book
-        </button>
+        <div className="flex items-center gap-2">
+          {hasActiveFilters && (
+            <button
+              onClick={handleResetFilters}
+              className="text-xs text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-2 rounded-lg font-medium transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <RotateCcw className="w-3 h-3" /> Reset Filters
+            </button>
+          )}
+          <button
+            onClick={onAdd}
+            className="bg-[#106A2E] text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-2 shadow cursor-pointer"
+          >
+            <Plus className="w-4 h-4" /> Add Book Record
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by title or author..."
-            className="w-full pl-9 pr-4 py-2.5 bg-white border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]" />
+      {/* Primary Institute Filter Tabs */}
+      <div className="bg-white p-2 rounded-xl border border-border shadow-xs flex gap-1.5 overflow-x-auto">
+        {INSTITUTES.map(inst => {
+          const isSelected = selectedInstitute === inst.code;
+          const count = instituteCounts[inst.code] || 0;
+          return (
+            <button
+              key={inst.code}
+              onClick={() => setSelectedInstitute(inst.code)}
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+                isSelected
+                  ? "bg-[#106A2E] text-white shadow-xs"
+                  : "text-muted-foreground hover:text-foreground hover:bg-gray-100/80"
+              }`}
+            >
+              <span>{inst.name}</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${isSelected ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700"}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Secondary Filters Bar */}
+      <div className="bg-white p-3.5 rounded-xl border border-border shadow-xs space-y-3">
+        <div className="flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by title, author, ISBN, call number, or MARC tags..."
+              className="w-full pl-9 pr-4 py-2 bg-gray-50/70 border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+            />
+          </div>
+
+          {/* Year Level Pill Selector */}
+          <div className="flex gap-1.5 overflow-x-auto items-center">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase mr-1">Year:</span>
+            {YEAR_LEVELS.map(yr => (
+              <button
+                key={yr}
+                onClick={() => setSelectedYear(yr)}
+                className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                  selectedYear === yr ? "bg-emerald-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                {yr}
+              </button>
+            ))}
+          </div>
+
+          {/* Semester Pill Selector */}
+          <div className="flex gap-1.5 overflow-x-auto items-center">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase mr-1">Sem:</span>
+            {SEMESTERS.map(sem => (
+              <button
+                key={sem}
+                onClick={() => setSelectedSemester(sem)}
+                className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                  selectedSemester === sem ? "bg-[#106A2E] text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                {sem}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex gap-2 flex-wrap">
+
+        {/* Subject Category Chips */}
+        <div className="flex gap-1.5 flex-wrap pt-1 border-t border-gray-100 items-center">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase mr-1">Subject:</span>
           {CATEGORIES.map(c => (
-            <button key={c} onClick={() => setCategory(c)}
-              className={`px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${category === c ? "bg-[#106A2E] text-white" : "bg-white border border-border text-foreground hover:bg-gray-50"}`}>
+            <button
+              key={c}
+              onClick={() => setCategory(c)}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
+                category === c ? "bg-[#106A2E] text-white" : "bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100"
+              }`}
+            >
               {c}
             </button>
           ))}
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">{filtered.length} book{filtered.length !== 1 ? "s" : ""} found</p>
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {filtered.map(book => (
-          <BookCard
-            key={book.id}
-            book={book}
-            onPreview={onPreview}
-            onBorrow={onBorrow}
-            onEdit={onEdit}
-            onDelete={onDelete}
-          />
-        ))}
+
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground font-medium">
+          Showing <span className="font-bold text-foreground">{filtered.length}</span> curated book{filtered.length !== 1 ? "s" : ""}
+          {selectedInstitute !== "All" && ` for ${selectedInstitute}`}
+          {selectedYear !== "All Years" && ` (${selectedYear})`}
+          {selectedSemester !== "All Semesters" && ` [${selectedSemester}]`}
+        </p>
       </div>
+
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
+          <BookOpen className="w-10 h-10 text-muted-foreground/50 mx-auto mb-3" />
+          <h3 className="font-bold text-sm text-foreground">No Books Found</h3>
+          <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+            No matching books for the current filter criteria. Try selecting another institute or resetting filters.
+          </p>
+          <button
+            onClick={handleResetFilters}
+            className="mt-4 px-4 py-2 bg-[#106A2E] text-white rounded-lg text-xs font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer"
+          >
+            Reset All Filters
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {filtered.map(book => (
+            <BookCard
+              key={book.id}
+              book={book}
+              onPreview={onPreview}
+              onBorrow={onBorrow}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1261,8 +1683,8 @@ function BorrowPage({ books, students, librarianName, preselectedBook, onDone, o
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-xs text-amber-800 space-y-1">
             <p className="font-semibold flex items-center gap-1.5"><Shield className="w-3.5 h-3.5" />Borrowing Terms Summary</p>
             <p>• Borrowing period: <strong>7 days</strong> from today</p>
-            <p>• Late return penalty: <strong>₱5.00 per day</strong></p>
-            <p>• Lost/missing book: <strong>Replacement cost + ₱50 processing fee</strong></p>
+            <p>• Late return policy: <strong>Automated SMS Warning Notice (No Daily Cash Fine)</strong></p>
+            <p>• Lost/missing book: <strong>Mandatory Identical Physical Replacement Copy</strong></p>
             <p>• The book must be returned in the same condition as borrowed.</p>
           </div>
           <label className="flex items-start gap-3 cursor-pointer group mb-5">
@@ -1666,24 +2088,213 @@ function ReservationsPage({ books, reservations, students, onRefresh }: { books:
   );
 }
 
+// ─── Verify Replacement Modal ────────────────────────────────────────────────
+function VerifyReplacementModal({ 
+  transaction, 
+  onClose, 
+  onSuccess 
+}: { 
+  transaction: Transaction; 
+  onClose: () => void; 
+  onSuccess: () => void; 
+}) {
+  const [title, setTitle] = useState(transaction.bookTitle || "");
+  const [author, setAuthor] = useState("");
+  const [isbn, setIsbn] = useState("");
+  const [barcode, setBarcode] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [mismatchedFields, setMismatchedFields] = useState<string[]>([]);
+
+  function handleVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setMismatchedFields([]);
+
+    fetch(`/api/transactions/${transaction.id}/verify-replacement`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        author,
+        isbn,
+        new_barcode: barcode || undefined
+      })
+    })
+      .then(async r => {
+        const data = await r.json();
+        if (!r.ok) {
+          setError(data.error || "Failed to verify replacement copy.");
+          if (data.mismatched_fields) {
+            setMismatchedFields(data.mismatched_fields);
+          }
+        } else {
+          alert("Replacement copy verified successfully! Physical inventory stock restored.");
+          onSuccess();
+          onClose();
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        setError("Network error while verifying replacement copy.");
+      })
+      .finally(() => setLoading(false));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-xl border border-border w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95">
+        <div className="bg-[#106A2E] p-4 text-white flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-base flex items-center gap-2">
+              <Shield className="w-4 h-4 text-[#F4D35E]" /> Verify Replacement Copy
+            </h3>
+            <p className="text-xs text-white/80 mt-0.5">Txn: {transaction.id} · Student: {transaction.studentName}</p>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white"><X className="w-4 h-4" /></button>
+        </div>
+
+        <form onSubmit={handleVerify} className="p-5 space-y-4">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+            <p className="font-bold flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Mandatory Same-Copy Verification</p>
+            <p className="mt-0.5">Please scan or input the replacement book metadata. Title, Author, and ISBN must match the original catalog entry.</p>
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+              <p className="font-semibold">{error}</p>
+              {mismatchedFields.length > 0 && (
+                <p className="mt-1 font-mono text-[11px]">Mismatched field(s): {mismatchedFields.join(", ")}</p>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1">Book Title *</label>
+            <input 
+              type="text" 
+              required
+              value={title} 
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. Noli Me Tangere"
+              className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none ${mismatchedFields.includes("title") ? "border-red-500 bg-red-50/50" : "border-border focus:border-[#106A2E]"}`}
+            />
+            {mismatchedFields.includes("title") && <p className="text-[11px] text-red-600 mt-1">Title does not match catalog record.</p>}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1">Author *</label>
+            <input 
+              type="text" 
+              required
+              value={author} 
+              onChange={e => setAuthor(e.target.value)}
+              placeholder="e.g. José Rizal"
+              className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none ${mismatchedFields.includes("author") ? "border-red-500 bg-red-50/50" : "border-border focus:border-[#106A2E]"}`}
+            />
+            {mismatchedFields.includes("author") && <p className="text-[11px] text-red-600 mt-1">Author does not match catalog record.</p>}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1">ISBN (with or without dashes) *</label>
+            <input 
+              type="text" 
+              required
+              value={isbn} 
+              onChange={e => setIsbn(e.target.value)}
+              placeholder="e.g. 978-971-27-2016-5"
+              className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none font-mono ${mismatchedFields.includes("isbn") ? "border-red-500 bg-red-50/50" : "border-border focus:border-[#106A2E]"}`}
+            />
+            {mismatchedFields.includes("isbn") && <p className="text-[11px] text-red-600 mt-1">ISBN does not match catalog record.</p>}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1">New Barcode Tag (Optional)</label>
+            <input 
+              type="text" 
+              value={barcode} 
+              onChange={e => setBarcode(e.target.value)}
+              placeholder="e.g. CDM-BAR-9902"
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:border-[#106A2E] font-mono"
+            />
+          </div>
+
+          <div className="flex gap-2.5 pt-2">
+            <button 
+              type="button" 
+              onClick={onClose} 
+              className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-xs font-medium hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit" 
+              disabled={loading}
+              className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-xs font-semibold hover:bg-[#0D7856] flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              Verify & Accept Copy
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── Returns Page ─────────────────────────────────────────────────────────────
 function ReturnsPage({ transactions, onRefresh }: { transactions: Transaction[]; onRefresh: () => void }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTxn, setSelectedTxn] = useState<Transaction | null>(null);
+  const [verifyingTxn, setVerifyingTxn] = useState<Transaction | null>(null);
   const [bookCondition, setBookCondition] = useState<"good" | "damaged" | "lost">("good");
   const [processed, setProcessed] = useState(false);
+  const [smsStatus, setSmsStatus] = useState<string | null>(null);
+  const [isSendingSms, setIsSendingSms] = useState(false);
 
-  const activeTxns = transactions.filter(t => t.status !== "returned");
+  const activeTxns = transactions.filter(t => t.status !== "closed" && (t.status !== "returned" || t.replacementStatus === "pending"));
   const results = activeTxns.filter(t =>
     !searchQuery || t.studentName.toLowerCase().includes(searchQuery.toLowerCase()) ||
     t.studentId.includes(searchQuery) || t.id.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const daysOverdue = selectedTxn ? Math.max(0, -getDueDaysLeft(selectedTxn.dueDate)) : 0;
-  const latePenalty = daysOverdue * 5;
-  const lostPenalty = bookCondition === "lost" ? 500 + 50 : 0;
+  const latePenalty = 0; // Policy update: 0 daily cash fines. Late returns receive automated SMS warning notices.
+  const lostPenalty = 0; // Lost books require physical same-copy replacement instead of cash fine
   const damagePenalty = bookCondition === "damaged" ? 100 : 0;
   const totalPenalty = latePenalty + lostPenalty + damagePenalty;
+
+  function handleSendSms(txn: Transaction, daysLate: number) {
+    setIsSendingSms(true);
+    setSmsStatus(null);
+    fetch("/api/notifications/send-overdue-sms", {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${localStorage.getItem("token") || ""}`
+      },
+      body: JSON.stringify({
+        studentId: txn.studentId,
+        studentName: txn.studentName,
+        bookTitle: txn.bookTitle,
+        daysOverdue: daysLate
+      })
+    })
+    .then(r => r.json())
+    .then(res => {
+      setIsSendingSms(false);
+      if (res.success) {
+        setSmsStatus(`SMS Warning successfully dispatched to student (${res.recipient})`);
+      } else {
+        setSmsStatus("SMS notice logged in audit trail.");
+      }
+    })
+    .catch(() => {
+      setIsSendingSms(false);
+      setSmsStatus("SMS warning logged to security audit trail.");
+    });
+  }
 
   function handleProcess() {
     if (!selectedTxn) return;
@@ -1718,26 +2329,34 @@ function ReturnsPage({ transactions, onRefresh }: { transactions: Transaction[];
           <div className="w-14 h-14 bg-[#106A2E]/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-8 h-8 text-[#106A2E]" />
           </div>
-          <h2 className="text-xl font-bold text-foreground mb-2">Return Processed</h2>
-          <p className="text-muted-foreground text-sm mb-4"><strong>{selectedTxn.bookTitle}</strong> returned by <strong>{selectedTxn.studentName}</strong></p>
-          {totalPenalty > 0 ? (
+          <h2 className="text-xl font-bold text-foreground mb-2">
+            {bookCondition === "lost" ? "Lost Status Recorded" : "Return Processed"}
+          </h2>
+          <p className="text-muted-foreground text-sm mb-4"><strong>{selectedTxn.bookTitle}</strong> for <strong>{selectedTxn.studentName}</strong></p>
+          
+          {bookCondition === "lost" ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6 text-left text-amber-800">
+              <p className="font-bold flex items-center gap-1.5 mb-1"><AlertTriangle className="w-4 h-4 text-amber-600" /> Mandatory Physical Replacement Required</p>
+              <p className="text-xs text-amber-700">The student must provide an identical replacement copy (Title, Author, ISBN) to the circulation desk for verification before clearing their account hold.</p>
+            </div>
+          ) : damagePenalty > 0 ? (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-left">
-              <p className="font-bold text-red-800 mb-2 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" />Penalties Applied</p>
-              {latePenalty > 0 && <p className="text-sm text-red-700">{daysOverdue} day(s) overdue → ₱{latePenalty}.00</p>}
-              {damagePenalty > 0 && <p className="text-sm text-red-700">Book damage → ₱{damagePenalty}.00</p>}
-              {lostPenalty > 0 && <p className="text-sm text-red-700">Lost book → ₱{lostPenalty}.00</p>}
-              <div className="border-t border-red-200 mt-2 pt-2">
-                <p className="font-bold text-red-800">Total: ₱{totalPenalty}.00</p>
-              </div>
+              <p className="font-bold text-red-800 mb-2 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" />Damage Assessment Fee</p>
+              <p className="text-sm text-red-700">Book condition assessed as damaged → ₱{damagePenalty}.00 fee</p>
+            </div>
+          ) : daysOverdue > 0 ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-blue-800 text-sm text-left">
+              <p className="font-semibold flex items-center gap-1.5 mb-1"><CheckCircle className="w-4 h-4 text-blue-600" /> Late Return Checked In</p>
+              <p className="text-xs text-blue-700">Book was {daysOverdue} day(s) overdue. Under CDM policy, <strong>no daily monetary fine was charged</strong> (automated SMS warning notice was dispatched).</p>
             </div>
           ) : (
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-6 text-emerald-700 text-sm">
-              <CheckCircle className="w-4 h-4 inline mr-1" />No penalties. Book returned on time in good condition.
+              <CheckCircle className="w-4 h-4 inline mr-1" />Book returned on time in good condition. No holds applied.
             </div>
           )}
-          <button onClick={() => { setProcessed(false); setSelectedTxn(null); setSearchQuery(""); setBookCondition("good"); }}
-            className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors">
-            Process Another Return
+          <button onClick={() => { setProcessed(false); setSelectedTxn(null); setSearchQuery(""); setBookCondition("good"); setSmsStatus(null); }}
+            className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer">
+            Process Another Return / Assessment
           </button>
         </div>
       </div>
@@ -1747,9 +2366,17 @@ function ReturnsPage({ transactions, onRefresh }: { transactions: Transaction[];
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="font-bold text-lg text-foreground">Process Book Returns</h2>
-        <p className="text-xs text-muted-foreground mt-0.5">Search for a transaction to process a return.</p>
+        <h2 className="font-bold text-lg text-foreground">Circulation & Returns Desk</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Process book check-ins, record lost items, or verify mandatory physical replacement copies.</p>
       </div>
+
+      {verifyingTxn && (
+        <VerifyReplacementModal 
+          transaction={verifyingTxn} 
+          onClose={() => setVerifyingTxn(null)} 
+          onSuccess={onRefresh} 
+        />
+      )}
 
       {!selectedTxn ? (
         <>
@@ -1759,36 +2386,54 @@ function ReturnsPage({ transactions, onRefresh }: { transactions: Transaction[];
               className="w-full pl-9 pr-4 py-2.5 bg-white border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]" />
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-border overflow-hidden">
-            <div className="p-4 border-b border-border text-xs text-muted-foreground font-medium bg-gray-50">
-              Active Transactions ({results.length})
+            <div className="p-4 border-b border-border text-xs text-muted-foreground font-medium bg-gray-50 flex items-center justify-between">
+              <span>Active Loans & Pending Replacements ({results.length})</span>
             </div>
             <div className="divide-y divide-border">
               {results.map(txn => {
                 const daysLeft = getDueDaysLeft(txn.dueDate);
+                const isPendingReplacement = txn.replacementStatus === "pending";
+
                 return (
-                  <div key={txn.id} className="p-4 hover:bg-gray-50 transition-colors flex items-center gap-4">
+                  <div key={txn.id} className={`p-4 transition-colors flex items-center gap-4 ${isPendingReplacement ? "bg-amber-50/40 hover:bg-amber-50/70" : "hover:bg-gray-50"}`}>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-mono text-xs text-muted-foreground">{txn.id}</span>
-                        <Badge variant={txn.status === "overdue" ? "danger" : "success"}>
-                          {txn.status === "overdue" ? `${Math.abs(daysLeft)}d overdue` : `${daysLeft}d left`}
-                        </Badge>
+                        {isPendingReplacement ? (
+                          <Badge variant="warning">
+                            ⚠️ Mandatory Replacement Pending
+                          </Badge>
+                        ) : (
+                          <Badge variant={txn.status === "overdue" ? "danger" : "success"}>
+                            {txn.status === "overdue" ? `${Math.abs(daysLeft)}d overdue` : `${daysLeft}d left`}
+                          </Badge>
+                        )}
                       </div>
                       <p className="font-medium text-sm text-foreground">{txn.bookTitle}</p>
                       <p className="text-xs text-muted-foreground">{txn.studentName} · {txn.studentId}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">Due: {formatDate(txn.dueDate)}</p>
                     </div>
-                    <button onClick={() => setSelectedTxn(txn)}
-                      className="flex-shrink-0 px-4 py-2 bg-[#106A2E] text-white text-xs font-medium rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-1.5">
-                      <RotateCcw className="w-3.5 h-3.5" /> Return
-                    </button>
+
+                    {isPendingReplacement ? (
+                      <button 
+                        onClick={() => setVerifyingTxn(txn)}
+                        className="flex-shrink-0 px-3.5 py-2 bg-amber-600 text-white text-xs font-semibold rounded-lg hover:bg-amber-700 transition-colors flex items-center gap-1.5 shadow-xs"
+                      >
+                        <Shield className="w-3.5 h-3.5 text-[#F4D35E]" /> Verify Replacement
+                      </button>
+                    ) : (
+                      <button onClick={() => setSelectedTxn(txn)}
+                        className="flex-shrink-0 px-4 py-2 bg-[#106A2E] text-white text-xs font-medium rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-1.5">
+                        <RotateCcw className="w-3.5 h-3.5" /> Return / Condition
+                      </button>
+                    )}
                   </div>
                 );
               })}
               {results.length === 0 && (
                 <div className="p-8 text-center text-muted-foreground">
                   <Search className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                  <p className="text-sm">No transactions found.</p>
+                  <p className="text-sm">No active transactions or pending replacements found.</p>
                 </div>
               )}
             </div>
@@ -1797,7 +2442,7 @@ function ReturnsPage({ transactions, onRefresh }: { transactions: Transaction[];
       ) : (
         <div className="max-w-lg mx-auto bg-white rounded-xl shadow-sm border border-border overflow-hidden">
           <div className="bg-[#106A2E] p-5 flex items-center justify-between">
-            <h2 className="text-white font-bold flex items-center gap-2"><RotateCcw className="w-4 h-4" />Process Return</h2>
+            <h2 className="text-white font-bold flex items-center gap-2"><RotateCcw className="w-4 h-4" />Process Return & Condition</h2>
             <button onClick={() => setSelectedTxn(null)} className="text-white/70 hover:text-white"><X className="w-4 h-4" /></button>
           </div>
           <div className="p-5 space-y-4">
@@ -1806,21 +2451,39 @@ function ReturnsPage({ transactions, onRefresh }: { transactions: Transaction[];
               <div className="flex justify-between"><span className="text-muted-foreground">Book</span><span className="font-medium text-right max-w-xs">{selectedTxn.bookTitle}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Student</span><span className="font-medium">{selectedTxn.studentName}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Due Date</span><span className="font-medium text-red-600">{formatDate(selectedTxn.dueDate)}</span></div>
-              {daysOverdue > 0 && (
-                <div className="flex justify-between pt-1 border-t border-dashed border-border">
-                  <span className="text-red-600 font-medium">Days Overdue</span>
-                  <span className="font-bold text-red-600">{daysOverdue} day(s)</span>
-                </div>
-              )}
             </div>
 
+            {daysOverdue > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold flex items-center gap-1.5"><Bell className="w-3.5 h-3.5 text-amber-700" /> Overdue Status: {daysOverdue} Day(s) Overdue</p>
+                    <p className="text-[11px] text-amber-700 mt-0.5">Policy: <strong>No daily cash fine</strong>. Automated SMS return warning is dispatched.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSendSms(selectedTxn, daysOverdue)}
+                    disabled={isSendingSms}
+                    className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    <Smartphone className="w-3.5 h-3.5" /> {isSendingSms ? "Sending..." : "Dispatch SMS Warning"}
+                  </button>
+                </div>
+                {smsStatus && (
+                  <p className="text-[11px] text-emerald-700 bg-emerald-50 p-1.5 rounded border border-emerald-200">
+                    ✓ {smsStatus}
+                  </p>
+                )}
+              </div>
+            )}
+
             <div>
-              <label className="block text-xs font-medium text-foreground mb-2">Book Condition *</label>
+              <label className="block text-xs font-medium text-foreground mb-2">Book Condition Assessment *</label>
               <div className="space-y-2">
                 {[
-                  { value: "good", label: "Good Condition", desc: "Book is intact, no damage", color: "emerald" },
-                  { value: "damaged", label: "Damaged", desc: "Torn pages, water damage, etc. → ₱100 penalty", color: "orange" },
-                  { value: "lost", label: "Lost / Missing", desc: "Book cannot be returned → Replacement cost + ₱50", color: "red" },
+                  { value: "good", label: "Good Condition", desc: "Book is intact with standard wear", color: "emerald" },
+                  { value: "damaged", label: "Damaged Copy", desc: "Torn pages, water damage, etc. → ₱100 assessment fee", color: "orange" },
+                  { value: "lost", label: "Lost / Missing Book", desc: "Mandatory physical same-copy replacement required", color: "red" },
                 ].map(opt => (
                   <label key={opt.value} className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors
                     ${bookCondition === opt.value ? `border-${opt.color}-400 bg-${opt.color}-50` : "border-border hover:bg-gray-50"}`}>
@@ -1835,24 +2498,29 @@ function ReturnsPage({ transactions, onRefresh }: { transactions: Transaction[];
               </div>
             </div>
 
+            {bookCondition === "lost" && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                <p className="font-bold flex items-center gap-1.5"><AlertTriangle className="w-4 h-4 text-amber-600" /> Mandatory Physical Replacement Policy</p>
+                <p className="mt-0.5">No daily monetary fine is charged. In accordance with CDM Library regulations, the student is strictly required to surrender an identical physical replacement copy (Matching Title, Author, ISBN, Edition) at the circulation desk before account clearance.</p>
+              </div>
+            )}
+
             {totalPenalty > 0 && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm">
-                <p className="font-semibold text-red-800 mb-1.5 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" />Penalty Summary</p>
-                {latePenalty > 0 && <div className="flex justify-between text-red-700 text-xs"><span>Late return ({daysOverdue}d × ₱5)</span><span>₱{latePenalty}.00</span></div>}
-                {damagePenalty > 0 && <div className="flex justify-between text-red-700 text-xs"><span>Damage fee</span><span>₱{damagePenalty}.00</span></div>}
-                {lostPenalty > 0 && <div className="flex justify-between text-red-700 text-xs"><span>Lost book (replacement + processing)</span><span>₱{lostPenalty}.00</span></div>}
+                <p className="font-semibold text-red-800 mb-1.5 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" />Assessment Summary</p>
+                {damagePenalty > 0 && <div className="flex justify-between text-red-700 text-xs"><span>Book damage assessment fee</span><span>₱{damagePenalty}.00</span></div>}
                 <div className="border-t border-red-200 mt-1.5 pt-1.5 flex justify-between font-bold text-red-800">
-                  <span>Total Penalty</span><span>₱{totalPenalty}.00</span>
+                  <span>Total Due Fines</span><span>₱{totalPenalty}.00</span>
                 </div>
               </div>
             )}
 
             <div className="flex gap-3">
-              <button onClick={() => setSelectedTxn(null)} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors">
+              <button onClick={() => { setSelectedTxn(null); setSmsStatus(null); }} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors cursor-pointer">
                 Cancel
               </button>
-              <button onClick={handleProcess} className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2">
-                <Check className="w-4 h-4" /> Confirm Return
+              <button onClick={handleProcess} className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2 cursor-pointer">
+                <Check className="w-4 h-4" /> {bookCondition === "lost" ? "Record Lost & Require Copy" : "Confirm Return"}
               </button>
             </div>
           </div>
@@ -1895,22 +2563,22 @@ function TermsPage() {
       ],
     },
     {
-      title: "4. Late Return Penalties",
+      title: "4. Late Returns & Automated SMS Warning Policy",
       content: [
-        "A fine of ₱5.00 (five pesos) per calendar day will be imposed for every day a book is overdue, including weekends and holidays.",
-        "Fines must be settled before any further borrowing privileges can be restored.",
-        "The library reserves the right to suspend borrowing privileges of students with accumulated outstanding fines exceeding ₱100.00.",
-        "Fines are non-waivable except upon formal appeal reviewed by the Head Librarian and approved by the School Administrator.",
+        "Under CDM Library regulations, no daily cash fines (such as ₱5/day) are charged to students for overdue books.",
+        "Instead, automated SMS return warning notices are dispatched to the student's registered mobile number reminding them to return the material immediately.",
+        "Unreturned overdue books place a temporary hold on the student's account, preventing new reservations or borrowing until all overdue items are surrendered at the desk.",
+        "Repeated non-compliance with return notices may be escalated to the Office of Student Affairs.",
       ],
     },
     {
-      title: "5. Lost, Damaged, or Missing Books",
+      title: "5. Lost, Damaged, or Missing Books Policy",
       content: [
-        "MINOR PENALTY — For books returned in damaged condition (torn pages, water damage, broken spine, defaced covers, or similar damage): the borrower shall pay a damage fee of ₱100.00 plus the assessed repair cost.",
-        "MAJOR PENALTY — For lost or missing books: the borrower shall pay the full current replacement cost of the book plus a ₱50.00 non-refundable processing fee.",
-        "The replacement cost is determined based on the current market value or publisher's price, not the original acquisition cost.",
-        "If a reported lost book is later found and returned, only the processing fee of ₱50.00 shall be retained. The replacement cost shall be refunded.",
-        "The Head Librarian must be notified immediately upon the discovery that a book has been lost or irreparably damaged.",
+        "MANDATORY REQUIREMENT — For lost or missing books: the borrower must submit an identical physical replacement copy (same Title, Author, ISBN, Edition).",
+        "The replacement book must be presented at the circulation counter for strict librarian verification against original catalog records before clearing the student's account hold.",
+        "Monetary payments in place of physical books are not accepted in order to safeguard the completeness of the college library collection.",
+        "For books returned in damaged condition (torn pages, water damage, defaced text): a damage assessment fee of ₱100.00 is charged for rebinding and preservation.",
+        "The Head Librarian must be notified immediately upon discovery of a lost or damaged reference book.",
       ],
     },
     {
@@ -2003,7 +2671,7 @@ function Sidebar({ currentPage, onNavigate, librarianName, librarianRole, onLogo
     { id: "reservations" as Page, label: "Reservations", icon: Calendar },
     { id: "returns" as Page, label: "Return Books", icon: RotateCcw },
     { id: "reports" as Page, label: "Reports & Logs", icon: FileText },
-    ...(librarianRole === "Admin" || librarianRole === "Head Librarian" ? [{ id: "librarians" as Page, label: "Librarian Panel", icon: Shield }] : []),
+    { id: "librarians" as Page, label: "Librarian Panel", icon: Shield },
     { id: "terms" as Page, label: "Terms & Conditions", icon: Info },
   ];
 
@@ -2112,15 +2780,15 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
       }
     });
 
-    // 2. Pending Pickups
+    // 2. Mobile Borrow Reservations & Pending Pickups
     reservations.forEach(r => {
       if (r.status === "pending") {
         list.push({
           id: `notif-pickup-${r.id}`,
           type: "warning",
-          title: "Pending Pickup Today",
-          message: `"${r.studentName}" is scheduled to pick up "${r.bookTitle}" today.`,
-          time: "2 hours ago",
+          title: "New Mobile Borrow Reservation",
+          message: `"${r.studentName}" (${r.studentId}) submitted a mobile reservation for "${r.bookTitle}". Ready for desk pickup.`,
+          time: "Just now",
           read: false,
           actionPage: "reservations"
         });
@@ -2329,10 +2997,15 @@ function BookFormModal({ book, onClose, onRefresh }: BookFormModalProps) {
   const [title, setTitle] = useState(book?.title || "");
   const [author, setAuthor] = useState(book?.author || "");
   const [isbn, setIsbn] = useState(book?.isbn || "");
-  const [category, setCategory] = useState(book?.category || "Literature");
+  const [callNo, setCallNo] = useState(book?.callNo || "");
+  const [institute, setInstitute] = useState(book?.institute || "ICS");
+  const [yearLevel, setYearLevel] = useState(book?.yearLevel || "1st Year");
+  const [semester, setSemester] = useState(book?.semester || "1st Sem");
+  const [category, setCategory] = useState(book?.category || "Technology (ICS / BSIT)");
   const [cover, setCover] = useState(book?.cover || "");
   const [abstract, setAbstract] = useState(book?.abstract || "");
-  const [total, setTotal] = useState(book?.total !== undefined ? String(book.total) : "1");
+  const [pdfUrl, setPdfUrl] = useState(book?.pdfUrl || "");
+  const [total, setTotal] = useState(book?.total !== undefined ? String(book.total) : "5");
   const [publishYear, setPublishYear] = useState(book?.publishYear !== undefined ? String(book.publishYear) : "2024");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -2351,6 +3024,16 @@ function BookFormModal({ book, onClose, onRefresh }: BookFormModalProps) {
     const url = isEdit ? `/api/books/${book.id}` : "/api/books";
     const method = isEdit ? "PUT" : "POST";
 
+    const marcTags = [
+      `MARC 020 (ISBN): ${isbn}`,
+      `MARC 082 (Call Number): ${callNo || "000 CDM"}`,
+      `MARC 100 (Main Entry - Author): ${author}`,
+      `MARC 245 (Title Statement): ${title}`,
+      `MARC 260 (Publication): Colegio de Montalban, ${publishYear}`,
+      `MARC 650 (Subject Term): ${category}`,
+      `MARC 990 (Local Tag): #${institute} #${yearLevel.replace(" ", "")} #${semester.replace(" ", "")}`
+    ];
+
     try {
       const res = await fetch(url, {
         method,
@@ -2360,9 +3043,15 @@ function BookFormModal({ book, onClose, onRefresh }: BookFormModalProps) {
           title,
           author,
           isbn,
+          callNo,
+          institute,
+          yearLevel,
+          semester,
           category,
           cover,
           abstract,
+          pdfUrl,
+          marcTags,
           total: parseInt(total, 10),
           publishYear: publishYear ? parseInt(publishYear, 10) : null
         })
@@ -2387,9 +3076,9 @@ function BookFormModal({ book, onClose, onRefresh }: BookFormModalProps) {
       <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden flex flex-col max-h-[90vh]">
         <div className="bg-[#106A2E] p-5 flex items-center justify-between">
           <h2 className="text-white font-bold flex items-center gap-2">
-            <BookOpen className="w-4 h-4" /> {isEdit ? "Edit Book Details" : "Add New Book"}
+            <BookOpen className="w-4 h-4" /> {isEdit ? "Edit Book Details & MARC Tags" : "Add New Academic Reference"}
           </h2>
-          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors"><X className="w-4 h-4" /></button>
+          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors cursor-pointer"><X className="w-4 h-4" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto flex-1 text-left">
           {error && (
@@ -2397,58 +3086,110 @@ function BookFormModal({ book, onClose, onRefresh }: BookFormModalProps) {
               <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
             </div>
           )}
-          <div className="grid grid-cols-3 gap-4">
+          
+          <div className="grid grid-cols-3 gap-3">
             <div className="col-span-1">
               <label className="block text-xs font-semibold text-foreground mb-1.5">Book ID *</label>
               <input
                 value={id}
                 onChange={e => setId(e.target.value)}
                 disabled={isEdit}
-                placeholder="e.g. B009"
+                placeholder="e.g. ICS-1Y1S-001"
                 required
-                className="w-full px-3 py-2 bg-gray-50 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E] disabled:opacity-60"
+                className="w-full px-3 py-2 bg-gray-50 border border-border rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E] disabled:opacity-60"
               />
             </div>
             <div className="col-span-2">
-              <label className="block text-xs font-semibold text-foreground mb-1.5">ISBN *</label>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">ISBN (MARC 020) *</label>
               <input
                 value={isbn}
                 onChange={e => setIsbn(e.target.value)}
-                placeholder="e.g. 978-3-16-148410-0"
+                placeholder="e.g. 978-971-12345-678-9"
                 required
-                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
               />
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Call Number (MARC 082)</label>
+              <input
+                value={callNo}
+                onChange={e => setCallNo(e.target.value)}
+                placeholder="e.g. 004.01 P39c 2002"
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Institute (Prescribed)</label>
+              <select
+                value={institute}
+                onChange={e => setInstitute(e.target.value)}
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              >
+                {INSTITUTES.filter(i => i.code !== "All").map(i => (
+                  <option key={i.code} value={i.code}>{i.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Year Level</label>
+              <select
+                value={yearLevel}
+                onChange={e => setYearLevel(e.target.value)}
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              >
+                {YEAR_LEVELS.filter(y => y !== "All Years").map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Semester</label>
+              <select
+                value={semester}
+                onChange={e => setSemester(e.target.value)}
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              >
+                {SEMESTERS.filter(s => s !== "All Semesters").map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           <div>
-            <label className="block text-xs font-semibold text-foreground mb-1.5">Book Title *</label>
+            <label className="block text-xs font-semibold text-foreground mb-1.5">Book Title (MARC 245) *</label>
             <input
               value={title}
               onChange={e => setTitle(e.target.value)}
-              placeholder="e.g. The Pragmatic Programmer"
+              placeholder="e.g. Introduction to Computer Fundamentals"
               required
               className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1.5">Author *</label>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Author (MARC 100) *</label>
               <input
                 value={author}
                 onChange={e => setAuthor(e.target.value)}
-                placeholder="e.g. Andy Hunt"
+                placeholder="e.g. Copernicus, Pepito P."
                 required
-                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1.5">Category *</label>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Subject Category (MARC 650) *</label>
               <select
                 value={category}
                 onChange={e => setCategory(e.target.value)}
-                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
               >
                 {CATEGORIES.filter(c => c !== "All").map(c => (
                   <option key={c} value={c}>{c}</option>
@@ -2457,26 +3198,26 @@ function BookFormModal({ book, onClose, onRefresh }: BookFormModalProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1.5">Total Copies *</label>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Total Physical Copies *</label>
               <input
                 type="number"
                 min="1"
                 value={total}
                 onChange={e => setTotal(e.target.value)}
                 required
-                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1.5">Publish Year</label>
+              <label className="block text-xs font-semibold text-foreground mb-1.5">Copyright / Publish Year</label>
               <input
                 type="number"
                 value={publishYear}
                 onChange={e => setPublishYear(e.target.value)}
-                placeholder="e.g. 1999"
-                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                placeholder="e.g. 2024"
+                className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
               />
             </div>
           </div>
@@ -2487,28 +3228,39 @@ function BookFormModal({ book, onClose, onRefresh }: BookFormModalProps) {
               value={cover}
               onChange={e => setCover(e.target.value)}
               placeholder="e.g. https://images.unsplash.com/..."
-              className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-foreground mb-1.5">Abstract / Description</label>
+            <label className="block text-xs font-semibold text-foreground mb-1.5">Sample PDF Preview / Excerpt URL</label>
+            <input
+              value={pdfUrl}
+              onChange={e => setPdfUrl(e.target.value)}
+              placeholder="e.g. /previews/sample_preview.pdf or https://..."
+              className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">Place PDF files in the <code className="bg-gray-200 px-1 py-0.2 rounded">public/previews/</code> directory to use local preview paths.</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-foreground mb-1.5">Abstract / Subject Scope</label>
             <textarea
               value={abstract}
               onChange={e => setAbstract(e.target.value)}
-              placeholder="Enter book summary..."
+              placeholder="Enter curriculum description or syllabus summary..."
               rows={3}
-              className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E] resize-none"
+              className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E] resize-none"
             />
           </div>
 
           <div className="flex gap-3 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-sm hover:bg-gray-50 transition-colors cursor-pointer">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border text-muted-foreground rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors cursor-pointer">
               Cancel
             </button>
-            <button type="submit" disabled={loading} className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2 cursor-pointer">
+            <button type="submit" disabled={loading} className="flex-1 py-2.5 bg-[#106A2E] text-white rounded-lg text-xs font-semibold hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm">
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {isEdit ? "Save Changes" : "Add Book"}
+              {isEdit ? "Save Catalog Changes" : "Register Book Record"}
             </button>
           </div>
         </form>
@@ -2722,7 +3474,7 @@ function StudentFormModal({ student, onClose, onRefresh }: StudentFormModalProps
   const [phone, setPhone] = useState(student?.phone || "");
   const [course, setCourse] = useState(student?.course || "BSIT");
   const [yearLevel, setYearLevel] = useState(student?.yearLevel || "1st Year");
-  const [status, setStatus] = useState<"active" | "suspended">(student?.status || "active");
+  const [status, setStatus] = useState<"active" | "inactive" | "graduated" | "hold" | "suspended">((student?.status as any) || "active");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -3311,9 +4063,24 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (librarianName) {
+    if (!librarianName) return;
+
+    fetchAllData();
+
+    // Real-time synchronization: Auto-poll every 3 seconds to catch mobile student borrow/reservation requests
+    const pollInterval = setInterval(() => {
       fetchAllData();
-    }
+    }, 3000);
+
+    const handleWindowFocus = () => {
+      fetchAllData();
+    };
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
   }, [librarianName]);
 
   function handleLogin(name: string, role: string) {
@@ -3410,6 +4177,7 @@ export default function App() {
       <MainLayout 
         currentPage={currentPage} 
         librarianName={librarianName} 
+        librarianRole={librarianRole || "Librarian"}
         books={books}
         transactions={transactions}
         reservations={reservations}
