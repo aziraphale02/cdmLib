@@ -3386,6 +3386,7 @@ function FullScreenPassModal({ student, onClose }) {
               fontWeight: 700,
               fontSize: 16,
               boxShadow: "0 4px 12px rgba(16,106,46,0.2)",
+              cursor: "pointer",
               flexShrink: 0,
             }}
           >

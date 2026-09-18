@@ -8,8 +8,18 @@ import {
   TrendingUp, Users, BookMarked, Eye, EyeOff, Shield, Star, Printer, X, Plus,
   ArrowRight, Info, Hash, Check, ChevronRight, Quote, GraduationCap,
   ChevronLeft, AlertCircle, Menu, BookX, Library, Filter, Loader2,
-  Edit, Trash, Tag, SlidersHorizontal, Layers, Copy, CheckCircle2, Smartphone
+  Edit, Trash, Tag, SlidersHorizontal, Layers, Copy, CheckCircle2, Smartphone,
+  KeyRound, Lock, ShieldCheck, Mail, Phone
 } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import {
+  MotionAppSkeleton,
+  MotionSkeletonCatalogGrid,
+  MotionSkeletonTable,
+  MotionSkeletonStats,
+  MotionMorphWrapper,
+  MotionSkeleton
+} from "@/app/components/MotionSkeletonLoader";
 
 // ─── Global Fetch Interceptor for JWT ─────────────────────────────────────────
 const originalFetch = window.fetch;
@@ -93,6 +103,7 @@ interface Student {
   course: string;
   yearLevel: string;
   status: "active" | "inactive" | "graduated" | "hold";
+  avatarUrl?: string;
 }
 
 interface Librarian {
@@ -409,7 +420,10 @@ function QRReceiptModal({ txn, book, onClose }: { txn: Omit<Transaction, "id"> &
             >
               Close
             </button>
-            <button className="flex-1 py-2.5 px-4 bg-[#106A2E] text-white rounded-lg text-sm font-medium hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2 cursor-pointer">
+            <button 
+              onClick={() => window.print()}
+              className="flex-1 py-2.5 px-4 bg-[#106A2E] text-white rounded-lg text-sm font-medium hover:bg-[#0D7856] transition-colors flex items-center justify-center gap-2 cursor-pointer"
+            >
               <Printer className="w-4 h-4" /> Print Receipt
             </button>
           </div>
@@ -698,6 +712,193 @@ function BookPreviewModal({ book, onClose, onBorrow, onEdit, onDelete }: {
   );
 }
 
+// ─── Forgot Password Modal ───────────────────────────────────────────────────
+function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
+  const [identifier, setIdentifier] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
+  async function handleReset(e: React.FormEvent) {
+    e.preventDefault();
+    if (!identifier.trim() || !employeeId.trim() || !newPassword) {
+      setError("Please fill in your username/email, Employee ID, and new password.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError("New password must be at least 6 characters long.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier, employeeId, newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Password reset failed.");
+      }
+      setSuccess(true);
+    } catch (err: any) {
+      setError(err.message || "An error occurred during password reset.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-left border border-border animate-in fade-in duration-200">
+        <div className="bg-[#106A2E] p-5 flex items-center justify-between text-white">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center">
+              <KeyRound className="w-5 h-5 text-[#F4D35E]" />
+            </div>
+            <div>
+              <h2 className="font-bold text-base">Reset Librarian Password</h2>
+              <p className="text-xs text-white/70">Staff Account Verification & Recovery</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white p-1 rounded transition-colors cursor-pointer">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6">
+          {success ? (
+            <div className="space-y-4 text-center py-4">
+              <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border border-emerald-100">
+                <CheckCircle2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-foreground text-base">Password Reset Successfully!</h3>
+                <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
+                  Your staff credentials have been updated. You can now log in using your new password.
+                </p>
+              </div>
+              <button
+                onClick={onClose}
+                className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer"
+              >
+                Return to Sign In
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleReset} className="space-y-4">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Enter your registered Username or Email and your official <strong>Employee ID</strong> (e.g. <span className="font-mono text-foreground font-semibold">EMP-0001</span>) to securely reset your password.
+              </p>
+
+              {error && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-[#B23B3B] text-xs">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1">Username or Institutional Email</label>
+                <div className="relative">
+                  <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={identifier}
+                    onChange={e => setIdentifier(e.target.value)}
+                    placeholder="e.g. admin, staff, or email@cdm.edu.ph"
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1">Employee ID Number</label>
+                <div className="relative">
+                  <ShieldCheck className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={employeeId}
+                    onChange={e => setEmployeeId(e.target.value)}
+                    placeholder="e.g. EMP-0001 or EMP-0003"
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1">New Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    placeholder="At least 6 characters"
+                    className="w-full pl-9 pr-9 py-2 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1">Confirm New Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 py-2 border border-border text-foreground rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 py-2 bg-[#106A2E] text-white rounded-lg text-xs font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-70 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                  {loading ? "Resetting..." : "Reset Password"}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Login Page ───────────────────────────────────────────────────────────────
 function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string, r: string) => void; onGoRegister: () => void }) {
   const [username, setUsername] = useState("");
@@ -705,6 +906,7 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string, r: string) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -727,6 +929,8 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string, r: string) 
       setLoading(false);
       localStorage.setItem("librarianName", data.name);
       localStorage.setItem("librarianRole", data.role);
+      localStorage.setItem("librarianUsername", data.username);
+      localStorage.setItem("librarianEmployeeId", data.employeeId || "");
       localStorage.setItem("authToken", data.token);
       onLogin(data.name, data.role);
     })
@@ -737,103 +941,139 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string, r: string) 
   }
 
   return (
-    <div className="min-h-screen flex" style={{ fontFamily: "var(--font-family-sans)" }}>
-      {/* Left panel */}
-      <div className="hidden lg:flex lg:w-1/2 relative flex-col items-center justify-center overflow-hidden"
-        style={{ background: "linear-gradient(160deg, #106A2E 0%, #0D7856 100%)" }}>
-        <div className="absolute inset-0 opacity-10">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="absolute border border-white/30 rounded-full"
-              style={{ width: (i + 1) * 120, height: (i + 1) * 120, top: "50%", left: "50%", transform: "translate(-50%, -50%)" }} />
-          ))}
-        </div>
-        <div className="relative z-10 text-center px-12">
-          <div className="mb-6 flex justify-center">
-            <div className="bg-[#F4D35E] rounded-2xl p-4 shadow-lg">
-              <Library className="w-12 h-12 text-[#1F1F1F]" />
-            </div>
-          </div>
-          <h1 className="text-4xl font-bold text-white mb-3" style={{ fontFamily: "var(--font-family-display)" }}>
-            CDM Library
-          </h1>
-          <p className="text-white/80 text-base leading-relaxed mb-8">Integrated Library Management System</p>
-          <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/20 text-left">
-            <Quote className="w-5 h-5 text-[#F4D35E] mb-3" />
-            <p className="text-white/90 text-sm italic leading-relaxed mb-2">"{TODAY_QUOTE.text}"</p>
-            <p className="text-[#F4D35E] text-xs font-medium">— {TODAY_QUOTE.author}</p>
-          </div>
-        </div>
-        <p className="absolute bottom-6 text-white/40 text-xs">© 2024 Colegio de Montalban · BSIT 3A Capstone Group 10</p>
+    <div 
+      className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 relative selection:bg-[#F4D35E]/30 overflow-hidden"
+      style={{ 
+        fontFamily: "var(--font-family-sans)",
+        background: "linear-gradient(145deg, #072F14 0%, #0D5625 35%, #106A2E 65%, #08401C 100%)"
+      }}
+    >
+      {/* Ambient background decoration - geometric concentric rings */}
+      <div className="absolute inset-0 pointer-events-none opacity-15 overflow-hidden flex items-center justify-center">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div 
+            key={i} 
+            className="absolute border border-white/30 rounded-full pointer-events-none"
+            style={{ 
+              width: (i + 1) * 200, 
+              height: (i + 1) * 200, 
+              top: "50%", 
+              left: "50%", 
+              transform: "translate(-50%, -50%)" 
+            }} 
+          />
+        ))}
       </div>
-      {/* Right panel */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-[#F1F1F1]">
-        <div className="w-full max-w-sm">
-          <div className="lg:hidden flex justify-center mb-8">
-            <div className="bg-[#106A2E] rounded-2xl p-3"><Library className="w-8 h-8 text-[#F4D35E]" /></div>
-          </div>
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-foreground" style={{ fontFamily: "var(--font-family-display)" }}>Welcome back</h2>
-            <p className="text-muted-foreground text-sm mt-1">Sign in to your librarian account</p>
-          </div>
-          {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-[#B23B3B] text-sm text-left">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
-            </div>
-          )}
-          <form onSubmit={handleSubmit} className="space-y-4 text-left">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Username</label>
-              <div className="relative">
-                <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type="text" value={username} onChange={e => setUsername(e.target.value)}
-                  placeholder="Enter your username"
-                  className="w-full pl-9 pr-4 py-2.5 bg-white border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E] transition-colors"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Password</label>
-              <div className="relative">
-                <Shield className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  className="w-full pl-9 pr-10 py-2.5 bg-white border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E] transition-colors"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
-            <div className="flex items-center justify-between text-xs">
-              <label className="flex items-center gap-2 text-muted-foreground cursor-pointer">
-                <input type="checkbox" className="rounded" /> Remember me
-              </label>
-              <button type="button" className="text-[#106A2E] hover:underline font-medium">Forgot password?</button>
-            </div>
-            <button
-              type="submit" disabled={loading}
-              className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-70 flex items-center justify-center gap-2 mt-2 cursor-pointer"
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {loading ? "Signing in..." : "Sign In"}
-            </button>
-          </form>
 
-          <p className="text-center text-xs text-muted-foreground mt-6">
-            New librarian?{" "}
-            <button onClick={onGoRegister} className="text-[#106A2E] font-medium hover:underline cursor-pointer">Create an account</button>
-          </p>
-          <p className="text-center text-xs text-muted-foreground mt-2">
-            Demo credentials: <span className="font-mono bg-gray-100 px-1 rounded">admin</span> / <span className="font-mono bg-gray-100 px-1 rounded">admin123</span>
-          </p>
-          <p className="text-center text-xs text-[#106A2E]/40 mt-8">CDM Integrated Library System · v1.0.0</p>
+      {/* Subtle warm gold & emerald ambient glow spots */}
+      <div className="absolute -top-32 -left-32 w-96 h-96 bg-[#F4D35E]/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
+
+      {showForgot && <ForgotPasswordModal onClose={() => setShowForgot(false)} />}
+
+      {/* Main Centered Floating Card */}
+      <div className="w-full max-w-[420px] bg-white rounded-[28px] sm:rounded-[32px] shadow-2xl shadow-emerald-950/40 border border-white/90 p-8 sm:p-10 text-center relative z-10 animate-in fade-in zoom-in-95 duration-200">
+        {/* Top Logo Icon - Library Open Book with Gold Accent */}
+        <div className="flex justify-center mb-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#106A2E] to-[#0D7856] flex items-center justify-center shadow-lg shadow-[#106A2E]/30 border-2 border-[#F4D35E]/40">
+            <BookOpen className="w-7 h-7 text-[#F4D35E]" />
+          </div>
         </div>
+
+        {/* Header Titles */}
+        <h1 className="text-2xl font-bold text-[#1F1F1F] tracking-tight" style={{ fontFamily: "var(--font-family-display)" }}>
+          CDM OneLib
+        </h1>
+        <p className="text-xs text-muted-foreground mt-1 mb-7">
+          Colegio de Montalban · Integrated Library Management System
+        </p>
+
+        {error && (
+          <div className="mb-5 p-3 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2 text-[#B23B3B] text-xs text-left">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+          </div>
+        )}
+
+        {/* Login Form */}
+        <form onSubmit={handleSubmit} className="space-y-4 text-left">
+          <div>
+            <label className="block text-xs font-semibold text-[#4B5563] mb-1.5">Username</label>
+            <div className="relative">
+              <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="Enter your username"
+                required
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-50/80 border border-gray-200 rounded-xl text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#106A2E]/25 focus:border-[#106A2E] focus:bg-white transition-all placeholder:text-gray-400"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#4B5563] mb-1.5">Password</label>
+            <div className="relative">
+              <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                className="w-full pl-10 pr-10 py-2.5 bg-gray-50/80 border border-gray-200 rounded-xl text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#106A2E]/25 focus:border-[#106A2E] focus:bg-white transition-all placeholder:text-gray-400"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-1 flex justify-end">
+            <button 
+              type="button" 
+              onClick={() => setShowForgot(true)}
+              className="text-xs font-semibold text-[#106A2E] hover:underline cursor-pointer"
+            >
+              Forgot password?
+            </button>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-gradient-to-r from-[#106A2E] to-[#0D7856] hover:from-[#0D5C27] hover:to-[#0A6347] text-white rounded-xl text-sm font-semibold active:scale-[0.99] transition-all disabled:opacity-70 flex items-center justify-center gap-2 shadow-md shadow-emerald-950/20 mt-3 cursor-pointer"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+            {loading ? "Signing in..." : "Sign In to Library"}
+          </button>
+        </form>
+
+        {/* Divider NEW HERE */}
+        <div className="relative my-7">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-200" />
+          </div>
+          <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest text-gray-400">
+            <span className="bg-white px-3">New Library Personnel</span>
+          </div>
+        </div>
+
+        {/* Registration CTA */}
+        <p className="text-xs text-gray-500">
+          New librarian or library head?{" "}
+          <button 
+            type="button"
+            onClick={onGoRegister} 
+            className="text-[#106A2E] font-bold hover:underline cursor-pointer ml-0.5"
+          >
+            Create Account
+          </button>
+        </p>
       </div>
     </div>
   );
@@ -877,14 +1117,20 @@ function RegisterPage({ onBack }: { onBack: () => void }) {
 
   if (done) {
     return (
-      <div className="min-h-screen bg-[#F1F1F1] flex items-center justify-center p-8">
-        <div className="bg-white rounded-2xl shadow-sm p-10 max-w-md w-full text-center">
+      <div 
+        className="min-h-screen flex items-center justify-center p-6 sm:p-8 relative overflow-hidden"
+        style={{ 
+          fontFamily: "var(--font-family-sans)",
+          background: "linear-gradient(145deg, #072F14 0%, #0D5625 35%, #106A2E 65%, #08401C 100%)"
+        }}
+      >
+        <div className="bg-white rounded-[28px] sm:rounded-[32px] shadow-2xl shadow-emerald-950/40 border border-white/90 p-8 sm:p-10 max-w-md w-full text-center relative z-10 animate-in fade-in zoom-in-95 duration-200">
           <div className="w-16 h-16 bg-[#106A2E]/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-8 h-8 text-[#106A2E]" />
           </div>
           <h2 className="text-2xl font-bold text-foreground mb-2" style={{ fontFamily: "var(--font-family-display)" }}>Account Created!</h2>
-          <p className="text-muted-foreground text-sm mb-6">Your librarian account has been created successfully. You can now return to the login screen and sign in immediately.</p>
-          <button onClick={onBack} className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer">
+          <p className="text-muted-foreground text-sm mb-6">Your personnel account has been created successfully. You can now return to the login screen and sign in.</p>
+          <button onClick={onBack} className="w-full py-2.5 bg-[#106A2E] text-white rounded-xl text-sm font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer">
             Back to Login
           </button>
         </div>
@@ -893,8 +1139,14 @@ function RegisterPage({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#F1F1F1] flex items-center justify-center p-8">
-      <div className="bg-white rounded-2xl shadow-sm max-w-lg w-full overflow-hidden">
+    <div 
+      className="min-h-screen flex items-center justify-center p-6 sm:p-8 relative overflow-hidden"
+      style={{ 
+        fontFamily: "var(--font-family-sans)",
+        background: "linear-gradient(145deg, #072F14 0%, #0D5625 35%, #106A2E 65%, #08401C 100%)"
+      }}
+    >
+      <div className="bg-white rounded-[28px] sm:rounded-[32px] shadow-2xl shadow-emerald-950/40 border border-white/90 max-w-lg w-full overflow-hidden relative z-10 animate-in fade-in zoom-in-95 duration-200">
         <div className="bg-[#106A2E] p-6 text-left">
           <button onClick={onBack} className="flex items-center gap-2 text-white/70 hover:text-white text-sm mb-4 transition-colors cursor-pointer">
             <ChevronLeft className="w-4 h-4" /> Back to Login
@@ -902,8 +1154,8 @@ function RegisterPage({ onBack }: { onBack: () => void }) {
           <div className="flex items-center gap-3">
             <div className="bg-[#F4D35E] rounded-xl p-2.5"><Library className="w-7 h-7 text-[#1F1F1F]" /></div>
             <div>
-              <h1 className="text-white font-bold text-lg" style={{ fontFamily: "var(--font-family-display)" }}>Create Librarian Account</h1>
-              <p className="text-white/70 text-xs">Colegio de Montalban · Library System</p>
+              <h1 className="text-white font-bold text-lg" style={{ fontFamily: "var(--font-family-display)" }}>Create Personnel Account</h1>
+              <p className="text-white/70 text-xs">Colegio de Montalban · Staff & Head Librarian Portal</p>
             </div>
           </div>
           {/* Steps */}
@@ -954,9 +1206,9 @@ function RegisterPage({ onBack }: { onBack: () => void }) {
                   <label className="block text-xs font-medium text-foreground mb-1.5">Role</label>
                   <select value={form.role} onChange={e => update("role", e.target.value)}
                     className="w-full px-3 py-2 bg-[#F1F1F1] border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]">
-                    <option>Librarian</option>
-                    <option>Head Librarian</option>
-                    <option>Library Aide</option>
+                    <option value="Librarian">Librarian (Staff)</option>
+                    <option value="Head Librarian">Head Librarian (Admin)</option>
+                    <option value="Library Aide">Library Aide</option>
                   </select>
                 </div>
               </div>
@@ -1171,6 +1423,8 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
   const [selectedYear, setSelectedYear] = useState("All Years");
   const [selectedSemester, setSelectedSemester] = useState("All Semesters");
   const [category, setCategory] = useState("All");
+  const [availability, setAvailability] = useState<"all" | "available" | "borrowed">("all");
+  const [sortBy, setSortBy] = useState<"default" | "title" | "borrowed" | "newest">("default");
 
   const instituteCounts = useMemo(() => {
     const counts: Record<string, number> = { All: books.length };
@@ -1181,164 +1435,263 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
     return counts;
   }, [books]);
 
-  const filtered = books.filter(b => {
-    // Institute Match
-    const bookInst = (b.institute === "GENED" ? "ITE" : b.institute) || "ITE";
-    const matchInst = selectedInstitute === "All" || bookInst === selectedInstitute;
-    
-    // Year Match
-    const matchYear = selectedYear === "All Years" || b.yearLevel === selectedYear;
+  const filtered = useMemo(() => {
+    return books
+      .filter(b => {
+        // Institute Match
+        const bookInst = (b.institute === "GENED" ? "ITE" : b.institute) || "ITE";
+        const matchInst = selectedInstitute === "All" || bookInst === selectedInstitute;
+        
+        // Year Match
+        const matchYear = selectedYear === "All Years" || b.yearLevel === selectedYear;
 
-    // Semester Match
-    const matchSem = selectedSemester === "All Semesters" || b.semester === selectedSemester;
+        // Semester Match
+        const matchSem = selectedSemester === "All Semesters" || b.semester === selectedSemester;
 
-    // Category Match
-    const matchCat = category === "All" || b.category === category;
+        // Category Match
+        const matchCat = category === "All" || b.category === category;
 
-    // Keyword Search
-    const q = search.toLowerCase();
-    const matchSearch = !search || 
-      b.title.toLowerCase().includes(q) || 
-      b.author.toLowerCase().includes(q) ||
-      b.isbn.toLowerCase().includes(q) ||
-      (b.callNo && b.callNo.toLowerCase().includes(q)) ||
-      (b.marcTags && b.marcTags.some(t => t.toLowerCase().includes(q)));
+        // Availability Match
+        const matchAvail = 
+          availability === "all" ? true :
+          availability === "available" ? b.available > 0 :
+          b.available === 0;
 
-    return matchInst && matchYear && matchSem && matchCat && matchSearch;
-  });
+        // Keyword Search
+        const q = search.toLowerCase().trim();
+        const matchSearch = !q || 
+          b.title.toLowerCase().includes(q) || 
+          b.author.toLowerCase().includes(q) ||
+          b.isbn.toLowerCase().includes(q) ||
+          (b.callNo && b.callNo.toLowerCase().includes(q)) ||
+          (b.marcTags && b.marcTags.some(t => t.toLowerCase().includes(q)));
 
-  const hasActiveFilters = selectedInstitute !== "All" || selectedYear !== "All Years" || selectedSemester !== "All Semesters" || category !== "All" || search !== "";
+        return matchInst && matchYear && matchSem && matchCat && matchAvail && matchSearch;
+      })
+      .sort((a, b) => {
+        if (sortBy === "title") return a.title.localeCompare(b.title);
+        if (sortBy === "borrowed") return (b.borrowCount || 0) - (a.borrowCount || 0);
+        if (sortBy === "newest") return (b.publishYear || 0) - (a.publishYear || 0);
+        return 0;
+      });
+  }, [books, selectedInstitute, selectedYear, selectedSemester, category, availability, search, sortBy]);
+
+  const hasActiveFilters = selectedInstitute !== "All" || selectedYear !== "All Years" || selectedSemester !== "All Semesters" || category !== "All" || availability !== "all" || search !== "" || sortBy !== "default";
 
   function handleResetFilters() {
     setSelectedInstitute("All");
     setSelectedYear("All Years");
     setSelectedSemester("All Semesters");
     setCategory("All");
+    setAvailability("all");
+    setSortBy("default");
     setSearch("");
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+    <div className="space-y-4">
+      {/* Header & Primary Action */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-left">
         <div>
-          <h2 className="font-bold text-lg text-foreground">CDM Library Book Collection</h2>
+          <h2 className="font-bold text-lg text-foreground flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-[#106A2E]" />
+            CDM Library Book Collection
+          </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             Prescribed academic references with official MARC 21 catalog tagging across all institutes.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {hasActiveFilters && (
-            <button
-              onClick={handleResetFilters}
-              className="text-xs text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-2 rounded-lg font-medium transition-colors cursor-pointer flex items-center gap-1"
-            >
-              <RotateCcw className="w-3 h-3" /> Reset Filters
-            </button>
-          )}
+        <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
             onClick={onAdd}
-            className="bg-[#106A2E] text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-2 shadow cursor-pointer"
+            className="bg-[#106A2E] text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Add Book Record
           </button>
         </div>
       </div>
 
-      {/* Primary Institute Filter Tabs */}
-      <div className="bg-white p-2 rounded-xl border border-border shadow-xs flex gap-1.5 overflow-x-auto">
-        {INSTITUTES.map(inst => {
-          const isSelected = selectedInstitute === inst.code;
-          const count = instituteCounts[inst.code] || 0;
-          return (
-            <button
-              key={inst.code}
-              onClick={() => setSelectedInstitute(inst.code)}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-                isSelected
-                  ? "bg-[#106A2E] text-white shadow-xs"
-                  : "text-muted-foreground hover:text-foreground hover:bg-gray-100/80"
-              }`}
-            >
-              <span>{inst.name}</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${isSelected ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700"}`}>
-                {count}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Secondary Filters Bar */}
-      <div className="bg-white p-3.5 rounded-xl border border-border shadow-xs space-y-3">
-        <div className="flex flex-col md:flex-row gap-3">
+      {/* Clean Unified Minimalist Filter Panel */}
+      <div className="bg-white p-4 rounded-xl border border-border shadow-xs space-y-3 text-left">
+        {/* Row 1: Search Bar & Institute Segmented Tabs */}
+        <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by title, author, ISBN, call number, or MARC tags..."
-              className="w-full pl-9 pr-4 py-2 bg-gray-50/70 border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+              className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all"
             />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs font-bold">✕</button>
+            )}
           </div>
 
-          {/* Year Level Pill Selector */}
-          <div className="flex gap-1.5 overflow-x-auto items-center">
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase mr-1">Year:</span>
-            {YEAR_LEVELS.map(yr => (
-              <button
-                key={yr}
-                onClick={() => setSelectedYear(yr)}
-                className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap cursor-pointer ${
-                  selectedYear === yr ? "bg-emerald-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                {yr}
-              </button>
-            ))}
-          </div>
-
-          {/* Semester Pill Selector */}
-          <div className="flex gap-1.5 overflow-x-auto items-center">
-            <span className="text-[11px] font-semibold text-muted-foreground uppercase mr-1">Sem:</span>
-            {SEMESTERS.map(sem => (
-              <button
-                key={sem}
-                onClick={() => setSelectedSemester(sem)}
-                className={`px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap cursor-pointer ${
-                  selectedSemester === sem ? "bg-[#106A2E] text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                {sem}
-              </button>
-            ))}
+          {/* Clean Segmented Institute Tabs */}
+          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg self-start lg:self-auto overflow-x-auto max-w-full">
+            {INSTITUTES.map(inst => {
+              const isSelected = selectedInstitute === inst.code;
+              const count = instituteCounts[inst.code] || 0;
+              const label = inst.code === "All" ? "All Institutes" : inst.code;
+              return (
+                <button
+                  key={inst.code}
+                  onClick={() => setSelectedInstitute(inst.code)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                    isSelected
+                      ? "bg-[#106A2E] text-white shadow-xs"
+                      : "text-muted-foreground hover:text-foreground hover:bg-gray-200/60"
+                  }`}
+                >
+                  <span>{label}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isSelected ? "bg-white/20 text-white" : "bg-gray-200 text-gray-700"}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Subject Category Chips */}
-        <div className="flex gap-1.5 flex-wrap pt-1 border-t border-gray-100 items-center">
-          <span className="text-[11px] font-semibold text-muted-foreground uppercase mr-1">Subject:</span>
-          {CATEGORIES.map(c => (
-            <button
-              key={c}
-              onClick={() => setCategory(c)}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors cursor-pointer ${
-                category === c ? "bg-[#106A2E] text-white" : "bg-gray-50 border border-gray-200 text-gray-700 hover:bg-gray-100"
-              }`}
+        {/* Row 2: Compact Dropdown Filters */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5 pt-2.5 border-t border-gray-100 text-xs">
+          {/* Year Level Select */}
+          <div>
+            <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Year Level</label>
+            <select
+              value={selectedYear}
+              onChange={e => setSelectedYear(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-gray-50 border border-border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all"
             >
-              {c}
-            </button>
-          ))}
+              {YEAR_LEVELS.map(yr => (
+                <option key={yr} value={yr}>{yr}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Semester Select */}
+          <div>
+            <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Semester</label>
+            <select
+              value={selectedSemester}
+              onChange={e => setSelectedSemester(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-gray-50 border border-border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all"
+            >
+              {SEMESTERS.map(sem => (
+                <option key={sem} value={sem}>{sem}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Category Select */}
+          <div className="col-span-2 sm:col-span-1">
+            <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Discipline</label>
+            <select
+              value={category}
+              onChange={e => setCategory(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-gray-50 border border-border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all truncate"
+            >
+              <option value="All">All Disciplines</option>
+              <option value="Computer Studies & Engineering (ICS - BSIT / BSCPE)">ICS (IT & CpE)</option>
+              <option value="Teacher Education & GenEd (ITE - BEED / BTLED / BECED / BSED)">ITE (Education & GenEd)</option>
+              <option value="Business & Entrepreneurship (IBE - BSBA / BS ENTREP)">IBE (Business & Entrep)</option>
+            </select>
+          </div>
+
+          {/* Stock Availability */}
+          <div>
+            <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Stock Status</label>
+            <select
+              value={availability}
+              onChange={e => setAvailability(e.target.value as any)}
+              className="w-full px-2.5 py-1.5 bg-gray-50 border border-border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all"
+            >
+              <option value="all">All Status</option>
+              <option value="available">Available on Shelf</option>
+              <option value="borrowed">Checked Out (0 Avail)</option>
+            </select>
+          </div>
+
+          {/* Sort Option */}
+          <div className="col-span-2 sm:col-span-1">
+            <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Sort Catalog</label>
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as any)}
+              className="w-full px-2.5 py-1.5 bg-gray-50 border border-border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all"
+            >
+              <option value="default">Default Order</option>
+              <option value="title">Title (A &rarr; Z)</option>
+              <option value="borrowed">Most Borrowed</option>
+              <option value="newest">Newest Year</option>
+            </select>
+          </div>
         </div>
+
+        {/* Active Filter Chips & Summary */}
+        {hasActiveFilters && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100 text-xs">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-muted-foreground">Active:</span>
+              {selectedInstitute !== "All" && (
+                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-emerald-200">
+                  {selectedInstitute}
+                  <button onClick={() => setSelectedInstitute("All")} className="hover:text-emerald-950 font-bold">✕</button>
+                </span>
+              )}
+              {selectedYear !== "All Years" && (
+                <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-blue-200">
+                  {selectedYear}
+                  <button onClick={() => setSelectedYear("All Years")} className="hover:text-blue-950 font-bold">✕</button>
+                </span>
+              )}
+              {selectedSemester !== "All Semesters" && (
+                <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-amber-200">
+                  {selectedSemester}
+                  <button onClick={() => setSelectedSemester("All Semesters")} className="hover:text-amber-950 font-bold">✕</button>
+                </span>
+              )}
+              {category !== "All" && (
+                <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-purple-200">
+                  Category
+                  <button onClick={() => setCategory("All")} className="hover:text-purple-950 font-bold">✕</button>
+                </span>
+              )}
+              {availability !== "all" && (
+                <span className="inline-flex items-center gap-1 bg-teal-50 text-teal-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-teal-200">
+                  {availability === "available" ? "In Stock" : "Checked Out"}
+                  <button onClick={() => setAvailability("all")} className="hover:text-teal-950 font-bold">✕</button>
+                </span>
+              )}
+              {search && (
+                <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-gray-200">
+                  "{search}"
+                  <button onClick={() => setSearch("")} className="hover:text-gray-950 font-bold">✕</button>
+                </span>
+              )}
+              <button
+                onClick={handleResetFilters}
+                className="text-[11px] text-red-600 hover:text-red-700 hover:underline ml-1 font-semibold cursor-pointer"
+              >
+                Clear all
+              </button>
+            </div>
+            <span className="text-[11px] text-muted-foreground font-medium">
+              Showing <strong className="text-foreground font-bold">{filtered.length}</strong> of {books.length} books
+            </span>
+          </div>
+        )}
       </div>
 
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground font-medium">
-          Showing <span className="font-bold text-foreground">{filtered.length}</span> curated book{filtered.length !== 1 ? "s" : ""}
-          {selectedInstitute !== "All" && ` for ${selectedInstitute}`}
-          {selectedYear !== "All Years" && ` (${selectedYear})`}
-          {selectedSemester !== "All Semesters" && ` [${selectedSemester}]`}
-        </p>
-      </div>
+      {/* Catalog Counter (when no filters) */}
+      {!hasActiveFilters && (
+        <div className="flex items-center justify-between text-left px-1">
+          <p className="text-xs text-muted-foreground font-medium">
+            Showing all <span className="font-bold text-foreground">{filtered.length}</span> cataloged volumes
+          </p>
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
@@ -1711,15 +2064,20 @@ function BorrowPage({ books, students, librarianName, preselectedBook, onDone, o
 }
 
 // ─── Reservations Page ────────────────────────────────────────────────────────
-function ReservationsPage({ books, reservations, students, onRefresh }: { books: Book[]; reservations: Reservation[]; students: Student[]; onRefresh: () => void }) {
+function ReservationsPage({ books, reservations, students, librarianName = "Staff Librarian", onRefresh }: { books: Book[]; reservations: Reservation[]; students: Student[]; librarianName?: string; onRefresh: () => void }) {
   const [showForm, setShowForm] = useState(false);
   const [selectedBook, setSelectedBook] = useState<Book | undefined>();
   const [studentName, setStudentName] = useState("");
   const [studentId, setStudentId] = useState("");
-  const [search, setSearch] = useState("");
   const [done, setDone] = useState(false);
   const tomorrow = getTomorrowDate();
   const availableBooks = books;
+
+  // Search & Filter States
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "fulfilled" | "cancelled">("pending");
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   // Student Search Dropdown States
   const [selectedStudent, setSelectedStudent] = useState<Student | undefined>();
@@ -1733,6 +2091,75 @@ function ReservationsPage({ books, reservations, students, onRefresh }: { books:
   const [quickEmail, setQuickEmail] = useState("");
   const [quickCourse, setQuickCourse] = useState("BSIT");
   const [quickYearLevel, setQuickYearLevel] = useState("1st Year");
+
+  // Release / Confirm Pickup Handler
+  async function handleReleaseBook(res: Reservation) {
+    if (!confirm(`Confirm releasing "${res.bookTitle}" to ${res.studentName} (${res.studentId})?`)) return;
+
+    setActionLoadingId(res.id);
+    setNotification(null);
+    try {
+      const response = await fetch(`/api/reservations/${res.id}/fulfill`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ librarianName })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to release book.");
+
+      setNotification({
+        type: "success",
+        message: `✓ Book successfully released to ${res.studentName}. Active loan created (Due: ${formatDate(data.dueDate)}).`
+      });
+      onRefresh();
+    } catch (err: any) {
+      setNotification({ type: "error", message: err.message || "An error occurred." });
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  // Cancel Reservation Handler
+  async function handleCancelReservation(res: Reservation) {
+    if (!confirm(`Cancel reservation for "${res.bookTitle}" and return 1 copy to shelf inventory?`)) return;
+
+    setActionLoadingId(res.id);
+    setNotification(null);
+    try {
+      const response = await fetch(`/api/reservations/${res.id}/cancel`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "Cancelled at circulation counter" })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to cancel reservation.");
+
+      setNotification({
+        type: "success",
+        message: `Reservation cancelled. Book copy restocked to shelf.`
+      });
+      onRefresh();
+    } catch (err: any) {
+      setNotification({ type: "error", message: err.message || "An error occurred." });
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  // Filtered Records
+  const pendingCount = reservations.filter(r => r.status === "pending").length;
+  const fulfilledCount = reservations.filter(r => r.status === "fulfilled").length;
+
+  const filteredReservations = reservations.filter(r => {
+    const matchesStatus = statusFilter === "all" ? true : r.status === statusFilter;
+    const q = searchTerm.toLowerCase().trim();
+    const matchesSearch = !q || 
+      r.studentName.toLowerCase().includes(q) ||
+      r.studentId.toLowerCase().includes(q) ||
+      r.bookTitle.toLowerCase().includes(q) ||
+      r.id.toLowerCase().includes(q);
+    return matchesStatus && matchesSearch;
+  });
 
   function handleQuickRegister() {
     if (!quickId || !quickName || !quickEmail) {
@@ -1813,61 +2240,205 @@ function ReservationsPage({ books, reservations, students, onRefresh }: { books:
     <div className="space-y-5">
       {!showForm ? (
         <>
-          <div className="flex items-center justify-between text-left">
+          {/* Header & Minimalist Summary */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-left">
             <div>
-              <h2 className="font-bold text-lg text-foreground">Book Reservations</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">Reservations can only be made 1 day in advance and are held for 1 day.</p>
+              <h2 className="font-bold text-lg text-foreground flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-[#106A2E]" />
+                Book Reservations &amp; Counter Pickups
+              </h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Verify student identity, release reserved books, and track claimed pickup deadlines.
+              </p>
             </div>
-            <button onClick={() => { setShowForm(true); setDone(false); setSelectedStudent(undefined); setStudentSearch(""); setStudentName(""); setStudentId(""); }} className="bg-[#106A2E] text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-2 cursor-pointer shadow">
-              <Plus className="w-4 h-4" /> New Reservation
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => { 
+                  setShowForm(true); 
+                  setDone(false); 
+                  setSelectedStudent(undefined); 
+                  setStudentSearch(""); 
+                  setStudentName(""); 
+                  setStudentId(""); 
+                  setNotification(null);
+                }} 
+                className="bg-[#106A2E] text-white text-xs font-semibold px-3.5 py-2 rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <Plus className="w-4 h-4" /> New Reservation
+              </button>
+            </div>
           </div>
 
-          <div className="bg-[#F4D35E]/10 border border-[#F4D35E] rounded-xl p-4 flex items-start gap-3 text-left">
-            <Info className="w-4 h-4 text-[#7a6500] mt-0.5 flex-shrink-0" />
-            <div className="text-xs text-[#7a6500] space-y-1">
-              <p className="font-semibold">Reservation Policy</p>
-              <p>• Reservations must be made exactly <strong>1 day before</strong> the intended pickup date.</p>
-              <p>• The reserved book is held for <strong>1 day only</strong>. Failure to pick up within this period will cancel the reservation.</p>
-              <p>• A student may only have <strong>1 active reservation</strong> at a time.</p>
+          {/* Toast Notification */}
+          {notification && (
+            <div className={`p-3 rounded-lg text-xs font-medium flex items-center justify-between transition-all ${
+              notification.type === "success" 
+                ? "bg-emerald-50 text-emerald-800 border border-emerald-200" 
+                : "bg-red-50 text-red-800 border border-red-200"
+            }`}>
+              <div className="flex items-center gap-2">
+                {notification.type === "success" ? <CheckCircle className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className="w-4 h-4 text-red-600" />}
+                <span>{notification.message}</span>
+              </div>
+              <button onClick={() => setNotification(null)} className="text-muted-foreground hover:text-foreground text-xs font-bold cursor-pointer">✕</button>
+            </div>
+          )}
+
+          {/* Minimalist Controls Strip */}
+          <div className="bg-white p-3.5 rounded-xl border border-border shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-left">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                placeholder="Search student name, ID, book title, or reservation ID..."
+                className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all"
+              />
+              {searchTerm && (
+                <button onClick={() => setSearchTerm("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs">✕</button>
+              )}
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg text-xs font-medium self-start sm:self-auto">
+              <button
+                onClick={() => setStatusFilter("pending")}
+                className={`px-3 py-1.5 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                  statusFilter === "pending" ? "bg-white text-[#106A2E] shadow-sm font-semibold" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>Pending Pickup</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  statusFilter === "pending" ? "bg-amber-100 text-amber-800" : "bg-gray-200 text-gray-700"
+                }`}>
+                  {pendingCount}
+                </span>
+              </button>
+              <button
+                onClick={() => setStatusFilter("all")}
+                className={`px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+                  statusFilter === "all" ? "bg-white text-foreground shadow-sm font-semibold" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                All ({reservations.length})
+              </button>
+              <button
+                onClick={() => setStatusFilter("fulfilled")}
+                className={`px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+                  statusFilter === "fulfilled" ? "bg-white text-emerald-700 shadow-sm font-semibold" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Claimed ({fulfilledCount})
+              </button>
+              <button
+                onClick={() => setStatusFilter("cancelled")}
+                className={`px-3 py-1.5 rounded-md transition-all cursor-pointer ${
+                  statusFilter === "cancelled" ? "bg-white text-gray-700 shadow-sm font-semibold" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Cancelled
+              </button>
             </div>
           </div>
 
+          {/* Minimalist Reservations Table */}
           <div className="bg-white rounded-xl shadow-sm border border-border overflow-hidden text-left">
-            <div className="p-4 border-b border-border flex items-center justify-between">
-              <h3 className="font-semibold text-sm text-foreground">Reservation Records</h3>
-              <Badge variant="accent">{reservations.length} Total</Badge>
-            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b border-border text-xs text-muted-foreground">
-                    <th className="text-left p-3 font-medium">Reservation ID</th>
-                    <th className="text-left p-3 font-medium">Book Title</th>
-                    <th className="text-left p-3 font-medium">Student</th>
-                    <th className="text-left p-3 font-medium">Reserved On</th>
-                    <th className="text-left p-3 font-medium">Pickup Date</th>
-                    <th className="text-left p-3 font-medium">Status</th>
+                    <th className="text-left p-3 font-semibold">Reservation ID</th>
+                    <th className="text-left p-3 font-semibold">Book Title</th>
+                    <th className="text-left p-3 font-semibold">Student Patron</th>
+                    <th className="text-left p-3 font-semibold">Reserved Date</th>
+                    <th className="text-left p-3 font-semibold">Pickup Deadline</th>
+                    <th className="text-left p-3 font-semibold">Status</th>
+                    <th className="text-right p-3 font-semibold">Counter Action</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {reservations.map(r => (
-                    <tr key={r.id} className="border-b border-border last:border-0 hover:bg-gray-50 transition-colors">
-                      <td className="p-3 font-mono text-xs text-muted-foreground">{r.id}</td>
-                      <td className="p-3 font-medium text-foreground">{r.bookTitle}</td>
-                      <td className="p-3">
-                        <p className="font-medium">{r.studentName}</p>
-                        <p className="text-xs text-muted-foreground">{r.studentId}</p>
-                      </td>
-                      <td className="p-3 text-xs text-muted-foreground">{formatDate(r.reservationDate)}</td>
-                      <td className="p-3 text-xs font-medium">{formatDate(r.pickupDate)}</td>
-                      <td className="p-3">
-                        <Badge variant={r.status === "pending" ? "warning" : r.status === "fulfilled" ? "success" : "danger"}>
-                          {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
-                        </Badge>
+                <tbody className="divide-y divide-border">
+                  {filteredReservations.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-xs text-muted-foreground">
+                        No reservations found matching "{searchTerm || statusFilter}".
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    filteredReservations.map(r => {
+                      const isPending = r.status === "pending";
+                      const isFulfilled = r.status === "fulfilled";
+                      const isLoading = actionLoadingId === r.id;
+
+                      return (
+                        <tr key={r.id} className="hover:bg-gray-50/80 transition-colors">
+                          <td className="p-3 font-mono text-xs text-muted-foreground">{r.id}</td>
+                          <td className="p-3">
+                            <p className="font-semibold text-foreground text-xs">{r.bookTitle}</p>
+                            <p className="text-[11px] text-muted-foreground">ID: {r.bookId}</p>
+                          </td>
+                          <td className="p-3">
+                            <p className="font-medium text-foreground text-xs">{r.studentName}</p>
+                            <p className="text-[11px] font-mono text-muted-foreground">{r.studentId}</p>
+                          </td>
+                          <td className="p-3 text-xs text-muted-foreground">{formatDate(r.reservationDate)}</td>
+                          <td className="p-3 text-xs font-medium">
+                            <span className={isPending ? "text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200" : "text-muted-foreground"}>
+                              {formatDate(r.pickupDate)}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                              isPending
+                                ? "bg-amber-100 text-amber-800"
+                                : isFulfilled
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-gray-100 text-gray-700"
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${
+                                isPending ? "bg-amber-500 animate-pulse" : isFulfilled ? "bg-emerald-500" : "bg-gray-400"
+                              }`} />
+                              {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right">
+                            {isPending ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={isLoading}
+                                  onClick={() => handleReleaseBook(r)}
+                                  className="bg-[#106A2E] hover:bg-[#0D7856] text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
+                                  title="Release book and create active loan"
+                                >
+                                  {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                                  Release Book
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isLoading}
+                                  onClick={() => handleCancelReservation(r)}
+                                  className="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-lg transition-colors cursor-pointer text-xs"
+                                  title="Cancel and restock"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : isFulfilled ? (
+                              <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                                ✓ Claimed &amp; Borrowed
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground">
+                                Cancelled
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -2262,8 +2833,8 @@ function ReturnsPage({ transactions, onRefresh }: { transactions: Transaction[];
   const daysOverdue = selectedTxn ? Math.max(0, -getDueDaysLeft(selectedTxn.dueDate)) : 0;
   const latePenalty = 0; // Policy update: 0 daily cash fines. Late returns receive automated SMS warning notices.
   const lostPenalty = 0; // Lost books require physical same-copy replacement instead of cash fine
-  const damagePenalty = bookCondition === "damaged" ? 100 : 0;
-  const totalPenalty = latePenalty + lostPenalty + damagePenalty;
+  const damagePenalty = 0; // Damaged books require physical copy replacement / binding restoration without cash fine
+  const totalPenalty = 0;
 
   function handleSendSms(txn: Transaction, daysLate: number) {
     setIsSendingSms(true);
@@ -2505,13 +3076,10 @@ function ReturnsPage({ transactions, onRefresh }: { transactions: Transaction[];
               </div>
             )}
 
-            {totalPenalty > 0 && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm">
-                <p className="font-semibold text-red-800 mb-1.5 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" />Assessment Summary</p>
-                {damagePenalty > 0 && <div className="flex justify-between text-red-700 text-xs"><span>Book damage assessment fee</span><span>₱{damagePenalty}.00</span></div>}
-                <div className="border-t border-red-200 mt-1.5 pt-1.5 flex justify-between font-bold text-red-800">
-                  <span>Total Due Fines</span><span>₱{totalPenalty}.00</span>
-                </div>
+            {bookCondition === "damaged" && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                <p className="font-bold flex items-center gap-1.5"><AlertTriangle className="w-4 h-4 text-amber-600" /> Book Condition & Preservation Assessment</p>
+                <p className="mt-0.5">Under CDM Library policy, no monetary cash penalty is assessed. Severe physical damages require surrender of a replacement copy before account clearance.</p>
               </div>
             )}
 
@@ -2653,15 +3221,297 @@ function TermsPage() {
 
       <div className="bg-[#1F1F1F] rounded-xl p-5 text-center">
         <p className="text-white/70 text-xs mb-1">CDM Integrated Library Management System</p>
-        <p className="text-white/40 text-xs">© 2024 Colegio de Montalban, Rodriguez, Rizal · BSIT 3A Capstone Group 10</p>
+        <p className="text-white/40 text-xs">© 2026 Colegio de Montalban, Rodriguez, Rizal · BSIT 4C Capstone Group 9</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── User Profile & Account Settings Modal ────────────────────────────────────
+function UserProfileModal({ 
+  librarianName, 
+  librarianRole, 
+  onClose, 
+  onLogout 
+}: { 
+  librarianName: string; 
+  librarianRole: string; 
+  onClose: () => void; 
+  onLogout: () => void; 
+}) {
+  const [activeTab, setActiveTab] = useState<"profile" | "password">("profile");
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Password fields
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [pwdLoading, setPwdLoading] = useState(false);
+  const [pwdError, setPwdError] = useState("");
+  const [pwdSuccess, setPwdSuccess] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then(r => r.json())
+      .then(d => {
+        if (!d.error) setProfile(d);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  async function handlePasswordChange(e: React.FormEvent) {
+    e.preventDefault();
+    setPwdError("");
+    setPwdSuccess("");
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPwdError("Please fill in all password fields.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPwdError("New password must be at least 6 characters long.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwdError("New passwords do not match.");
+      return;
+    }
+
+    setPwdLoading(true);
+    try {
+      const res = await fetch("/api/auth/change-password", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to change password.");
+      setPwdSuccess("Password updated successfully! Your account is now secured.");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err: any) {
+      setPwdError(err.message || "Failed to update password.");
+    } finally {
+      setPwdLoading(false);
+    }
+  }
+
+  const initials = (librarianName || "Librarian")
+    .split(" ")
+    .map(n => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  const empId = profile?.employee_id || localStorage.getItem("librarianEmployeeId") || (librarianRole?.toLowerCase().includes("head") || librarianRole?.toLowerCase().includes("admin") ? "EMP-0001" : "EMP-0003");
+  const email = profile?.email || `${(profile?.username || "staff").toLowerCase()}@cdm.edu.ph`;
+  const phone = profile?.phone || "0912-345-6789";
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden text-left border border-border animate-in fade-in duration-200">
+        {/* Header with identity styling */}
+        <div className="bg-gradient-to-r from-[#106A2E] to-[#0D7856] p-6 text-white relative">
+          <button 
+            onClick={onClose} 
+            className="absolute top-4 right-4 text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-[#F4D35E] text-[#1F1F1F] font-bold text-xl flex items-center justify-center shadow-md flex-shrink-0">
+              {initials}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="font-bold text-lg text-white truncate">{librarianName}</h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/20 text-white border border-white/30">
+                  {librarianRole || "Staff Librarian"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-1 text-xs text-white/80">
+                <span className="font-mono bg-black/20 px-1.5 py-0.5 rounded text-[11px] font-semibold text-[#F4D35E]">{empId}</span>
+                <span>&bull;</span>
+                <span className="flex items-center gap-1 text-emerald-200">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Verified Staff
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex border-b border-border bg-gray-50/75 px-6 pt-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("profile")}
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "profile" 
+                ? "border-[#106A2E] text-[#106A2E]" 
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <User className="w-3.5 h-3.5" /> Profile Details
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("password")}
+            className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "password" 
+                ? "border-[#106A2E] text-[#106A2E]" 
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Lock className="w-3.5 h-3.5" /> Change Password
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div className="p-6">
+          {activeTab === "profile" ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-gray-50 border border-border">
+                  <span className="text-muted-foreground block mb-0.5">Assigned Role</span>
+                  <span className="font-semibold text-foreground flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5 text-[#106A2E]" /> {librarianRole || "Staff Librarian"}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-gray-50 border border-border">
+                  <span className="text-muted-foreground block mb-0.5">Employee ID</span>
+                  <span className="font-semibold font-mono text-foreground flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#106A2E]" /> {empId}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-gray-50 border border-border">
+                  <span className="text-muted-foreground block mb-0.5">Official Email</span>
+                  <span className="font-medium text-foreground truncate block flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-[#106A2E] flex-shrink-0" /> {email}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-gray-50 border border-border">
+                  <span className="text-muted-foreground block mb-0.5">Contact Number</span>
+                  <span className="font-medium text-foreground flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-[#106A2E]" /> {phone}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-[#106A2E]/5 border border-[#106A2E]/20 text-xs text-[#106A2E] flex items-center gap-2">
+                <Info className="w-4 h-4 flex-shrink-0" />
+                <span>To change your default assigned password or update security credentials, switch to the <strong>Change Password</strong> tab above.</span>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handlePasswordChange} className="space-y-4">
+              <p className="text-xs text-muted-foreground">
+                Update your account password from the default one. You will use this new password for subsequent desktop logins.
+              </p>
+
+              {pwdError && (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-[#B23B3B] text-xs">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" /> {pwdError}
+                </div>
+              )}
+
+              {pwdSuccess && (
+                <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center gap-2 text-emerald-800 text-xs">
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-600" /> {pwdSuccess}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1">Current Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type={showCurrentPassword ? "text" : "password"}
+                    value={currentPassword}
+                    onChange={e => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    className="w-full pl-9 pr-9 py-2 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    {showCurrentPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1">New Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    placeholder="At least 6 characters"
+                    className="w-full pl-9 pr-9 py-2 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1">Confirm New Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 py-2 border border-border text-foreground rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={pwdLoading}
+                  className="flex-1 py-2 bg-[#106A2E] text-white rounded-lg text-xs font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-70 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {pwdLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                  {pwdLoading ? "Saving..." : "Update Password"}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-function Sidebar({ currentPage, onNavigate, librarianName, librarianRole, onLogout, collapsed, onToggle }: {
-  currentPage: Page; onNavigate: (p: Page) => void; librarianName: string; librarianRole: string; onLogout: () => void; collapsed: boolean; onToggle: () => void;
+function Sidebar({ currentPage, onNavigate, librarianName, librarianRole, onLogout, collapsed, onToggle, onOpenProfile }: {
+  currentPage: Page; onNavigate: (p: Page) => void; librarianName: string; librarianRole: string; onLogout: () => void; collapsed: boolean; onToggle: () => void; onOpenProfile?: () => void;
 }) {
   const navItems = [
     { id: "dashboard" as Page, label: "Dashboard", icon: LayoutDashboard },
@@ -2717,23 +3567,33 @@ function Sidebar({ currentPage, onNavigate, librarianName, librarianRole, onLogo
       {/* Footer */}
       <div className="p-3 border-t border-white/15">
         {!collapsed ? (
-          <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-white/10 mb-2">
+          <button 
+            type="button"
+            onClick={onOpenProfile}
+            className="w-full flex items-center gap-2.5 p-2.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors mb-2 text-left cursor-pointer group"
+            title="Click to view Profile & Change Password"
+          >
             <div className="w-8 h-8 rounded-full bg-[#F4D35E] flex items-center justify-center flex-shrink-0">
               <User className="w-4 h-4 text-[#1F1F1F]" />
             </div>
-            <div className="min-w-0">
-              <p className="text-white text-xs font-semibold truncate">{librarianName}</p>
+            <div className="min-w-0 flex-1">
+              <p className="text-white text-xs font-semibold truncate group-hover:text-[#F4D35E] transition-colors">{librarianName}</p>
               <p className="text-white/50 text-xs truncate">{librarianRole || "Librarian"}</p>
             </div>
-          </div>
+          </button>
         ) : (
-          <div className="flex justify-center mb-2">
+          <button 
+            type="button"
+            onClick={onOpenProfile}
+            className="w-full flex justify-center mb-2 p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            title="Profile & Password Settings"
+          >
             <div className="w-8 h-8 rounded-full bg-[#F4D35E] flex items-center justify-center">
               <User className="w-4 h-4 text-[#1F1F1F]" />
             </div>
-          </div>
+          </button>
         )}
-        <button onClick={onLogout} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-colors">
+        <button onClick={onLogout} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-colors cursor-pointer">
           <LogOut className="w-4 h-4 flex-shrink-0" />
           {!collapsed && <span className="text-xs font-medium">Logout</span>}
         </button>
@@ -2760,6 +3620,7 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
 
   useEffect(() => {
@@ -2854,6 +3715,14 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ fontFamily: "var(--font-family-sans)" }}>
+      {showProfile && (
+        <UserProfileModal
+          librarianName={librarianName}
+          librarianRole={librarianRole}
+          onClose={() => setShowProfile(false)}
+          onLogout={onLogout}
+        />
+      )}
       <Sidebar 
         currentPage={currentPage} 
         onNavigate={onNavigate} 
@@ -2862,6 +3731,7 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
         onLogout={onLogout} 
         collapsed={collapsed} 
         onToggle={() => setCollapsed(c => !c)} 
+        onOpenProfile={() => setShowProfile(true)}
       />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Header */}
@@ -2965,15 +3835,20 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
                 </>
               )}
             </div>
-            <div className="flex items-center gap-2.5 pl-3 border-l border-border">
-              <div className="w-8 h-8 rounded-full bg-[#106A2E] flex items-center justify-center">
+            <button 
+              type="button"
+              onClick={() => setShowProfile(true)}
+              className="flex items-center gap-2.5 pl-3 border-l border-border hover:opacity-80 transition-opacity text-left cursor-pointer group"
+              title="Click to view Profile & Change Password"
+            >
+              <div className="w-8 h-8 rounded-full bg-[#106A2E] flex items-center justify-center group-hover:ring-2 group-hover:ring-[#106A2E]/30 transition-all">
                 <User className="w-4 h-4 text-white" />
               </div>
               <div className="hidden sm:block">
-                <p className="text-xs font-semibold text-foreground">{librarianName}</p>
-                <p className="text-xs text-muted-foreground">Librarian</p>
+                <p className="text-xs font-semibold text-foreground group-hover:text-[#106A2E] transition-colors">{librarianName}</p>
+                <p className="text-xs text-muted-foreground">{librarianRole || "Staff Librarian"}</p>
               </div>
-            </div>
+            </button>
           </div>
         </header>
         {/* Content */}
@@ -3394,8 +4269,7 @@ function StudentsPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-border text-xs text-muted-foreground">
-                <th className="text-left p-3 font-medium">Student ID</th>
-                <th className="text-left p-3 font-medium">Name</th>
+                <th className="text-left p-3 font-medium">Student / Photo</th>
                 <th className="text-left p-3 font-medium">Course & Year</th>
                 <th className="text-left p-3 font-medium">Email</th>
                 <th className="text-left p-3 font-medium">Phone</th>
@@ -3409,10 +4283,17 @@ function StudentsPage({
                   key={s.id}
                   className="border-b border-border last:border-0 hover:bg-gray-50 transition-colors"
                 >
-                  <td className="p-3 font-mono text-xs font-semibold text-foreground">
-                    {s.id}
+                  <td className="p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#ECFDF5] border border-emerald-300 flex-shrink-0 flex items-center justify-center text-[#106A2E] font-bold text-sm shadow-sm">
+                        {s.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-foreground text-sm leading-tight">{s.name}</p>
+                        <p className="text-[11px] text-muted-foreground font-mono mt-0.5">{s.id}</p>
+                      </div>
+                    </div>
                   </td>
-                  <td className="p-3 font-semibold text-foreground">{s.name}</td>
                   <td className="p-3 text-muted-foreground text-xs">
                     {s.course} · {s.yearLevel}
                   </td>
@@ -3536,6 +4417,7 @@ function StudentFormModal({ student, onClose, onRefresh }: StudentFormModalProps
               <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
             </div>
           )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-foreground mb-1.5">Student ID *</label>
@@ -3808,9 +4690,8 @@ function LibrariansPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-12">
-        <Loader2 className="w-6 h-6 text-[#106A2E] animate-spin" />
-        <span className="ml-2 text-sm text-muted-foreground">Loading accounts...</span>
+      <div className="space-y-6 max-w-6xl mx-auto">
+        <MotionSkeletonTable rows={4} columns={6} title="Loading staff accounts..." />
       </div>
     );
   }
@@ -4019,12 +4900,29 @@ function ReportsPage({ books, transactions }: { books: Book[]; transactions: Tra
 export default function App() {
   const [authPage, setAuthPage] = useState<"login" | "register">("login");
   const [librarianName, setLibrarianName] = useState<string | null>(() => {
-    return localStorage.getItem("librarianName");
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("demo") === "admin") return "Admin Head Librarian";
+    }
+    // Always land on the landing/login screen when opening the app
+    return null;
   });
   const [librarianRole, setLibrarianRole] = useState<string | null>(() => {
-    return localStorage.getItem("librarianRole");
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("demo") === "admin") return "admin";
+    }
+    return null;
   });
-  const [currentPage, setCurrentPage] = useState<Page>("dashboard");
+  const [currentPage, setCurrentPage] = useState<Page>(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("page") as Page;
+      if (p && ["dashboard", "catalog", "students", "borrow", "reservations", "returns", "reports", "librarians", "terms"].includes(p)) {
+        return p;
+      }
+    }
+    return "dashboard";
+  });
   const [previewBook, setPreviewBook] = useState<Book | null>(null);
   const [borrowBook, setBorrowBook] = useState<Book | undefined>(undefined);
   const [editBook, setEditBook] = useState<Book | null>(null);
@@ -4113,14 +5011,7 @@ export default function App() {
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#F1F1F1] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-2">
-          <Loader2 className="w-8 h-8 text-[#106A2E] animate-spin" />
-          <p className="text-sm text-muted-foreground font-medium">Loading library system...</p>
-        </div>
-      </div>
-    );
+    return <MotionAppSkeleton />;
   }
 
   return (
@@ -4184,65 +5075,76 @@ export default function App() {
         onNavigate={setCurrentPage} 
         onLogout={handleLogout}
       >
-        {currentPage === "dashboard" && (
-          <DashboardPage 
-            books={books}
-            transactions={transactions}
-            reservations={reservations}
-            librarianName={librarianName} 
-            onNavigate={setCurrentPage} 
-          />
-        )}
-        {currentPage === "catalog" && (
-          <CatalogPage
-            books={books}
-            onBorrow={handleBorrow}
-            onPreview={handlePreview}
-            onAdd={() => setShowAddModal(true)}
-            onEdit={setEditBook}
-            onDelete={setDeleteBook}
-          />
-        )}
-        {currentPage === "students" && (
-          <StudentsPage
-            students={students}
-            onAdd={() => setShowAddStudentModal(true)}
-            onEdit={setEditStudent}
-            onDelete={setDeleteStudent}
-          />
-        )}
-        {currentPage === "borrow" && (
-          <BorrowPage
-            books={books}
-            students={students}
-            librarianName={librarianName}
-            preselectedBook={borrowBook}
-            onDone={() => { setBorrowBook(undefined); setCurrentPage("dashboard"); }}
-            onRefresh={fetchAllData}
-          />
-        )}
-        {currentPage === "reservations" && (
-          <ReservationsPage 
-            books={books}
-            reservations={reservations}
-            students={students}
-            onRefresh={fetchAllData}
-          />
-        )}
-        {currentPage === "returns" && (
-          <ReturnsPage 
-            transactions={transactions}
-            onRefresh={fetchAllData}
-          />
-        )}
-        {currentPage === "reports" && (
-          <ReportsPage 
-            books={books}
-            transactions={transactions}
-          />
-        )}
-        {currentPage === "librarians" && <LibrariansPage />}
-        {currentPage === "terms" && <TermsPage />}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentPage}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+          >
+            {currentPage === "dashboard" && (
+              <DashboardPage 
+                books={books}
+                transactions={transactions}
+                reservations={reservations}
+                librarianName={librarianName} 
+                onNavigate={setCurrentPage} 
+              />
+            )}
+            {currentPage === "catalog" && (
+              <CatalogPage
+                books={books}
+                onBorrow={handleBorrow}
+                onPreview={handlePreview}
+                onAdd={() => setShowAddModal(true)}
+                onEdit={setEditBook}
+                onDelete={setDeleteBook}
+              />
+            )}
+            {currentPage === "students" && (
+              <StudentsPage
+                students={students}
+                onAdd={() => setShowAddStudentModal(true)}
+                onEdit={setEditStudent}
+                onDelete={setDeleteStudent}
+              />
+            )}
+            {currentPage === "borrow" && (
+              <BorrowPage
+                books={books}
+                students={students}
+                librarianName={librarianName}
+                preselectedBook={borrowBook}
+                onDone={() => { setBorrowBook(undefined); setCurrentPage("dashboard"); }}
+                onRefresh={fetchAllData}
+              />
+            )}
+            {currentPage === "reservations" && (
+              <ReservationsPage 
+                books={books}
+                reservations={reservations}
+                students={students}
+                librarianName={librarianName || "Staff Librarian"}
+                onRefresh={fetchAllData}
+              />
+            )}
+            {currentPage === "returns" && (
+              <ReturnsPage 
+                transactions={transactions}
+                onRefresh={fetchAllData}
+              />
+            )}
+            {currentPage === "reports" && (
+              <ReportsPage 
+                books={books}
+                transactions={transactions}
+              />
+            )}
+            {currentPage === "librarians" && <LibrariansPage />}
+            {currentPage === "terms" && <TermsPage />}
+          </motion.div>
+        </AnimatePresence>
       </MainLayout>
     </div>
   );

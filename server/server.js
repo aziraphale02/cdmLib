@@ -380,6 +380,7 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
       return res.status(403).json({ error: 'Your account is pending administrator approval.' });
     }
     const token = signJwt({
+      id: librarian.id,
       username: librarian.username,
       name: `${librarian.first_name} ${librarian.last_name}`,
       role: librarian.role
@@ -388,7 +389,11 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
     logAudit(req, { action: 'LIBRARIAN_LOGIN_SUCCESS', resource: username, details: `Role: ${librarian.role}` });
 
     res.json({
+      id: librarian.id,
       username: librarian.username,
+      employeeId: librarian.employee_id,
+      email: librarian.email,
+      phone: librarian.phone,
       firstName: librarian.first_name,
       lastName: librarian.last_name,
       name: `${librarian.first_name} ${librarian.last_name}`,
@@ -424,6 +429,85 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
       }
       return res.status(400).json({ error: 'Username, Email, or Employee ID already registered.' });
     }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Self-service Password Reset / Forgot Password
+app.post('/api/auth/reset-password', authLimiter, (req, res) => {
+  const { identifier, employeeId, newPassword } = req.body;
+  if (!identifier || !employeeId || !newPassword) {
+    return res.status(400).json({ error: 'Please provide your Username/Email, Employee ID, and New Password.' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+  }
+  try {
+    const cleanId = identifier.trim();
+    const cleanEmp = employeeId.trim();
+    const librarian = db.prepare(`
+      SELECT * FROM librarians 
+      WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)) 
+        AND LOWER(employee_id) = LOWER(?)
+    `).get(cleanId, cleanId, cleanEmp);
+
+    if (!librarian) {
+      logAudit(req, { action: 'PASSWORD_RESET_FAILED', resource: cleanId, status: 'FAILED', details: 'Invalid employee verification details' });
+      return res.status(404).json({ error: 'No matching librarian account found with the provided credentials and Employee ID.' });
+    }
+
+    const hashedPassword = hashPassword(newPassword);
+    db.prepare('UPDATE librarians SET password = ? WHERE id = ?').run(hashedPassword, librarian.id);
+
+    logAudit(req, { action: 'PASSWORD_RESET_SUCCESS', resource: librarian.username, details: `Reset via Employee ID: ${librarian.employee_id}` });
+    res.json({ success: true, message: 'Password updated successfully. You can now log in with your new password.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Authenticated Change Password
+app.put('/api/auth/change-password', authenticateToken, (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const username = req.user.username;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Current password and new password are required.' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+  }
+
+  try {
+    const librarian = db.prepare('SELECT * FROM librarians WHERE username = ?').get(username);
+    if (!librarian) {
+      return res.status(404).json({ error: 'User account not found.' });
+    }
+
+    const isValid = verifyPassword(currentPassword, librarian.password);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Incorrect current password.' });
+    }
+
+    const hashedPassword = hashPassword(newPassword);
+    db.prepare('UPDATE librarians SET password = ? WHERE id = ?').run(hashedPassword, librarian.id);
+
+    logAudit(req, { action: 'PASSWORD_CHANGED', resource: username, details: 'User updated password via profile settings' });
+    res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Authenticated Profile info
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+  try {
+    const librarian = db.prepare('SELECT id, first_name, last_name, email, phone, employee_id, role, username, status FROM librarians WHERE username = ?').get(req.user.username);
+    if (!librarian) {
+      return res.status(404).json({ error: 'Librarian profile not found.' });
+    }
+    res.json(librarian);
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -699,7 +783,7 @@ app.post('/api/transactions/return', authenticateToken, (req, res) => {
 
   try {
     returnTxn();
-    res.json({ success: true });
+    res.json({ success: true, status: 'returned', transactionId });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -837,7 +921,97 @@ app.post('/api/reservations', (req, res) => {
     `);
     stmt.run(resId, book.id, book.title, studentName, studentId, reservationDate, pickupDate);
     const created = db.prepare('SELECT * FROM reservations WHERE id = ?').get(resId);
-    res.status(201).json({ success: true, reservationId: resId, reservation: mapReservation(created) });
+    res.status(201).json({ success: true, id: resId, reservationId: resId, reservation: mapReservation(created) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Fulfill / Confirm Pickup of a Reservation
+app.patch('/api/reservations/:id/fulfill', (req, res) => {
+  const { id } = req.params;
+  const librarianName = req.body.librarianName || req.user?.name || 'Staff Librarian';
+
+  try {
+    const reservation = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
+    if (!reservation) {
+      return res.status(404).json({ error: 'Reservation not found.' });
+    }
+    if (reservation.status !== 'pending') {
+      return res.status(400).json({ error: `Reservation is already ${reservation.status}.` });
+    }
+
+    const fulfillTxn = db.transaction(() => {
+      // 1. Mark reservation as fulfilled
+      db.prepare("UPDATE reservations SET status = 'fulfilled' WHERE id = ?").run(id);
+
+      // 2. Create active loan in transactions
+      const txnId = `TXN-${Date.now()}`;
+      const today = new Date().toISOString().split('T')[0];
+      const dueDate = new Date(Date.now() + (86400000 * 3)).toISOString().split('T')[0];
+
+      db.prepare(`
+        INSERT INTO transactions (id, book_id, book_title, student_name, student_id, librarian_name, borrow_date, due_date, status, penalty)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 0)
+      `).run(txnId, reservation.book_id, reservation.book_title, reservation.student_name, reservation.student_id, librarianName, today, dueDate);
+
+      // 3. Increment book borrow count
+      db.prepare('UPDATE books SET borrow_count = borrow_count + 1 WHERE id = ?').run(reservation.book_id);
+
+      return { txnId, dueDate };
+    });
+
+    const result = fulfillTxn();
+    logAudit(req, {
+      action: 'RESERVATION_FULFILLED',
+      resource: id,
+      details: `Released ${reservation.book_title} to ${reservation.student_name} (${reservation.student_id}) by ${librarianName}`
+    });
+
+    res.json({
+      success: true,
+      message: `Book successfully released to ${reservation.student_name}.`,
+      transactionId: result.txnId,
+      dueDate: result.dueDate
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Cancel a Reservation and restock inventory
+app.patch('/api/reservations/:id/cancel', (req, res) => {
+  const { id } = req.params;
+  const reason = req.body.reason || 'Unclaimed / Cancelled by Staff';
+
+  try {
+    const reservation = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
+    if (!reservation) {
+      return res.status(404).json({ error: 'Reservation not found.' });
+    }
+    if (reservation.status !== 'pending') {
+      return res.status(400).json({ error: `Reservation is already ${reservation.status}.` });
+    }
+
+    const cancelTxn = db.transaction(() => {
+      // 1. Mark as cancelled
+      db.prepare("UPDATE reservations SET status = 'cancelled' WHERE id = ?").run(id);
+
+      // 2. Restock book availability
+      db.prepare('UPDATE books SET available = available + 1 WHERE id = ?').run(reservation.book_id);
+    });
+
+    cancelTxn();
+    logAudit(req, {
+      action: 'RESERVATION_CANCELLED',
+      resource: id,
+      details: `Cancelled reservation for ${reservation.book_title} - Reason: ${reason}`
+    });
+
+    res.json({
+      success: true,
+      message: `Reservation cancelled and 1 copy of '${reservation.book_title}' restocked to shelves.`
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1014,7 +1188,8 @@ app.get('/api/students', authenticateToken, (req, res) => {
       phone: s.phone,
       course: s.course,
       yearLevel: s.year_level,
-      status: s.status
+      status: s.status,
+      avatarUrl: s.avatar_url || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=400&h=400&fit=crop&crop=faces&auto=format'
     })));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1022,7 +1197,7 @@ app.get('/api/students', authenticateToken, (req, res) => {
 });
 
 app.post('/api/students', authenticateToken, (req, res) => {
-  const { id, name, email, phone, course, yearLevel, status } = req.body;
+  const { id, name, email, phone, course, yearLevel, status, avatarUrl } = req.body;
   if (!id || !name || !email) {
     return res.status(400).json({ error: 'Please provide Student ID, Full Name, and Email.' });
   }
@@ -1037,10 +1212,10 @@ app.post('/api/students', authenticateToken, (req, res) => {
     }
 
     const stmt = db.prepare(`
-      INSERT INTO students (id, name, email, phone, course, year_level, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO students (id, name, email, phone, course, year_level, status, avatar_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, name, email, phone || '', course || '', yearLevel || '', status || 'active');
+    stmt.run(id, name, email, phone || '', course || '', yearLevel || '', status || 'active', avatarUrl || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=400&h=400&fit=crop&crop=faces&auto=format');
     res.status(201).json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1049,7 +1224,7 @@ app.post('/api/students', authenticateToken, (req, res) => {
 
 app.put('/api/students/:id', authenticateToken, (req, res) => {
   const { id } = req.params;
-  const { name, email, phone, course, yearLevel, status } = req.body;
+  const { name, email, phone, course, yearLevel, status, avatarUrl } = req.body;
   if (!name || !email) {
     return res.status(400).json({ error: 'Please provide Full Name and Email.' });
   }
@@ -1061,10 +1236,10 @@ app.put('/api/students/:id', authenticateToken, (req, res) => {
 
     const stmt = db.prepare(`
       UPDATE students
-      SET name = ?, email = ?, phone = ?, course = ?, year_level = ?, status = ?
+      SET name = ?, email = ?, phone = ?, course = ?, year_level = ?, status = ?, avatar_url = COALESCE(?, avatar_url)
       WHERE id = ?
     `);
-    const result = stmt.run(name, email, phone || '', course || '', yearLevel || '', status || 'active', id);
+    const result = stmt.run(name, email, phone || '', course || '', yearLevel || '', status || 'active', avatarUrl || null, id);
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Student not found.' });
     }
