@@ -1408,10 +1408,19 @@ function LoginPage({ onLogin, onGoRegister }: { onLogin: (u: string, r: string) 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 bg-gradient-to-r from-[#106A2E] to-[#0D7856] hover:from-[#0D5C27] hover:to-[#0A6347] text-white rounded-xl text-sm font-semibold active:scale-[0.99] transition-all disabled:opacity-70 flex items-center justify-center gap-2 shadow-md shadow-emerald-950/20 mt-3 cursor-pointer"
+            className="w-full h-11 bg-[#106A2E] hover:bg-[#0D5625] text-white rounded-xl text-sm font-semibold transition-colors duration-150 disabled:opacity-70 flex items-center justify-center gap-2 shadow-md shadow-emerald-950/20 mt-3 cursor-pointer select-none"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-            {loading ? "Signing in..." : "Sign In to Library"}
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                <span>Signing in...</span>
+              </>
+            ) : (
+              <>
+                <span>Sign In to Library</span>
+                <ArrowRight className="w-4 h-4 shrink-0" />
+              </>
+            )}
           </button>
         </form>
 
