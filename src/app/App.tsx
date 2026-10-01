@@ -9,7 +9,7 @@ import {
   ArrowRight, Info, Hash, Check, ChevronRight, Quote, GraduationCap,
   ChevronLeft, AlertCircle, Menu, BookX, Library, Filter, Loader2,
   Edit, Trash, Tag, SlidersHorizontal, Layers, Copy, CheckCircle2, Smartphone,
-  KeyRound, Lock, ShieldCheck, Mail, Phone
+  KeyRound, Lock, ShieldCheck, Mail, Phone, BadgeCheck
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -712,18 +712,115 @@ function BookPreviewModal({ book, onClose, onBorrow, onEdit, onDelete }: {
   );
 }
 
-// ─── Forgot Password Modal ───────────────────────────────────────────────────
+// ─── Forgot Password Modal (Email OTP & Employee ID Verification) ───────────
 function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
+  const [resetMethod, setResetMethod] = useState<"otp" | "employee">("otp");
+  const [step, setStep] = useState<1 | 2 | 3>(1); // 1: Email, 2: OTP, 3: New Password
+  const [email, setEmail] = useState("");
+  const [otpInput, setOtpInput] = useState("");
+  const [demoOtp, setDemoOtp] = useState<string | null>(null);
+  
+  // Legacy / Employee ID Fields
   const [identifier, setIdentifier] = useState("");
   const [employeeId, setEmployeeId] = useState("");
+  
+  // Password Fields
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
 
-  async function handleReset(e: React.FormEvent) {
+  // Step 1: Send OTP to Email
+  async function handleSendOtp(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || !email.includes("@")) {
+      setError("Please enter a valid institutional email address.");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to send OTP verification code.");
+      }
+      setDemoOtp(data.otp || null);
+      setStep(2);
+    } catch (err: any) {
+      setError(err.message || "An error occurred while sending OTP.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Step 2: Verify OTP Code
+  async function handleVerifyOtp(e: React.FormEvent) {
+    e.preventDefault();
+    if (!otpInput.trim() || otpInput.trim().length !== 6) {
+      setError("Please enter the 6-digit OTP verification code.");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), otp: otpInput.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Invalid OTP code.");
+      }
+      setStep(3);
+    } catch (err: any) {
+      setError(err.message || "OTP verification failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Step 3: Set New Password via OTP
+  async function handleResetPasswordOtp(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      setError("New password must be at least 6 characters long.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/reset-password-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), otp: otpInput.trim(), newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Password reset failed.");
+      }
+      setSuccess(true);
+    } catch (err: any) {
+      setError(err.message || "Failed to update password.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Legacy Employee ID Reset
+  async function handleResetEmployee(e: React.FormEvent) {
     e.preventDefault();
     if (!identifier.trim() || !employeeId.trim() || !newPassword) {
       setError("Please fill in your username/email, Employee ID, and new password.");
@@ -759,100 +856,350 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-left border border-border animate-in fade-in duration-200">
-        <div className="bg-[#106A2E] p-5 flex items-center justify-between text-white">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center">
-              <KeyRound className="w-5 h-5 text-[#F4D35E]" />
-            </div>
-            <div>
-              <h2 className="font-bold text-base">Reset Librarian Password</h2>
-              <p className="text-xs text-white/70">Staff Account Verification & Recovery</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white p-1 rounded transition-colors cursor-pointer">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div className="p-6">
-          {success ? (
-            <div className="space-y-4 text-center py-4">
-              <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border border-emerald-100">
-                <CheckCircle2 className="w-6 h-6" />
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200/80 w-full max-w-md overflow-hidden transition-all transform scale-100">
+        
+        {/* Modal Header */}
+        <div className="px-6 pt-6 pb-4 border-b border-slate-100">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100/80 flex items-center justify-center text-emerald-600 shrink-0 shadow-xs">
+                <KeyRound className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-foreground text-base">Password Reset Successfully!</h3>
-                <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">
-                  Your staff credentials have been updated. You can now log in using your new password.
+                <h3 className="text-base font-bold text-slate-900 tracking-tight">Account Password Recovery</h3>
+                <p className="text-xs text-slate-500 font-normal">Reset your library portal access</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1.5 rounded-lg transition-colors cursor-pointer"
+              aria-label="Close modal"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Segmented Navigation */}
+          {!success && (
+            <div className="mt-5 p-1 bg-slate-100/80 rounded-xl flex items-center gap-1 border border-slate-200/40">
+              <button
+                type="button"
+                onClick={() => { setResetMethod("otp"); setError(""); setStep(1); }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  resetMethod === "otp"
+                    ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
+                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                }`}
+              >
+                <Mail className={`w-3.5 h-3.5 ${resetMethod === "otp" ? "text-emerald-600" : "text-slate-400"}`} />
+                <span>Email OTP</span>
+                <span className="bg-emerald-100/80 text-emerald-800 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  Recommended
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setResetMethod("employee"); setError(""); }}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  resetMethod === "employee"
+                    ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
+                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                }`}
+              >
+                <BadgeCheck className={`w-3.5 h-3.5 ${resetMethod === "employee" ? "text-emerald-600" : "text-slate-400"}`} />
+                <span>Employee ID</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-6">
+          {error && (
+            <div className="mb-4 p-3 bg-red-50/80 border border-red-200/80 rounded-xl flex items-start gap-2.5 text-red-700 text-xs animate-shake">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+              <div className="flex-1 font-medium">{error}</div>
+            </div>
+          )}
+
+          {success ? (
+            <div className="text-center py-4 space-y-4">
+              <div className="w-14 h-14 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-xs">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-slate-900">Password Reset Successful</h4>
+                <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                  Your password has been updated successfully. You can now sign in with your new credentials.
                 </p>
               </div>
               <button
                 onClick={onClose}
-                className="w-full py-2.5 bg-[#106A2E] text-white rounded-lg text-sm font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer"
+                className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2 mt-2"
               >
-                Return to Sign In
+                <span>Return to Sign In</span>
+                <ArrowRight className="w-4 h-4" />
               </button>
             </div>
-          ) : (
-            <form onSubmit={handleReset} className="space-y-4">
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Enter your registered Username or Email and your official <strong>Employee ID</strong> (e.g. <span className="font-mono text-foreground font-semibold">EMP-0001</span>) to securely reset your password.
-              </p>
-
-              {error && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-[#B23B3B] text-xs">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+          ) : resetMethod === "otp" ? (
+            <div>
+              {/* Stepper Progress Header */}
+              <div className="mb-5 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-700">
+                    Step {step} of 3 • {step === 1 ? "Enter Email" : step === 2 ? "Verify OTP Code" : "New Password"}
+                  </span>
+                  <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                    {step === 1 ? "33%" : step === 2 ? "66%" : "100%"}
+                  </span>
                 </div>
+                {/* 2px Emerald Progress Bar */}
+                <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-600 transition-all duration-300 rounded-full"
+                    style={{ width: step === 1 ? "33.3%" : step === 2 ? "66.6%" : "100%" }}
+                  />
+                </div>
+              </div>
+
+              {/* Step 1: Enter Email */}
+              {step === 1 && (
+                <form onSubmit={handleSendOtp} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Institutional Email Address <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="e.g. librarian@cdm.edu.ph or juan@cdm.edu.ph"
+                        className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
+                      />
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-slate-500">
+                      We'll send a 6-digit OTP verification code to this address.
+                    </p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Sending Code...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Send OTP Verification Code</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
               )}
 
+              {/* Step 2: Verify OTP */}
+              {step === 2 && (
+                <form onSubmit={handleVerifyOtp} className="space-y-4">
+                  {demoOtp && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                      <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold">Demo OTP Code: </span>
+                        <code className="bg-amber-100 px-1.5 py-0.5 rounded text-amber-950 font-mono font-bold tracking-widest">{demoOtp}</code>
+                        <span className="text-[11px] text-amber-700 block mt-0.5">Use this code for quick verification testing.</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Enter 6-Digit OTP Code <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <ShieldCheck className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        required
+                        maxLength={6}
+                        value={otpInput}
+                        onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ""))}
+                        placeholder="123456"
+                        className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all text-center"
+                      />
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-slate-500">
+                      Code sent to <span className="font-semibold text-slate-700">{email}</span>.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => { setStep(1); setError(""); }}
+                      className="py-2.5 px-3 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Back</span>
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Verifying...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Verify Code</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Step 3: New Password */}
+              {step === 3 && (
+                <form onSubmit={handleResetPasswordOtp} className="space-y-3.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      New Password <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type={showNewPassword ? "text" : "password"}
+                        required
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="At least 6 characters"
+                        className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Confirm New Password <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type={showNewPassword ? "text" : "password"}
+                        required
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Re-enter your new password"
+                        className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => { setStep(2); setError(""); }}
+                      className="py-2.5 px-3 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Back</span>
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Updating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Update Password</span>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          ) : (
+            /* Employee ID Reset Form */
+            <form onSubmit={handleResetEmployee} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">Username or Institutional Email</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Username or Email <span className="text-red-500">*</span>
+                </label>
                 <div className="relative">
-                  <User className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
+                    required
                     value={identifier}
-                    onChange={e => setIdentifier(e.target.value)}
-                    placeholder="e.g. admin, staff, or email@cdm.edu.ph"
-                    className="w-full pl-9 pr-3 py-2 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
-                    required
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="Enter your registered username or email"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">Employee ID Number</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Employee ID <span className="text-red-500">*</span>
+                </label>
                 <div className="relative">
-                  <ShieldCheck className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <BadgeCheck className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type="text"
-                    value={employeeId}
-                    onChange={e => setEmployeeId(e.target.value)}
-                    placeholder="e.g. EMP-0001 or EMP-0003"
-                    className="w-full pl-9 pr-3 py-2 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
                     required
+                    value={employeeId}
+                    onChange={(e) => setEmployeeId(e.target.value)}
+                    placeholder="e.g. EMP-2024-001"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">New Password</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  New Password <span className="text-red-500">*</span>
+                </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type={showNewPassword ? "text" : "password"}
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    placeholder="At least 6 characters"
-                    className="w-full pl-9 pr-9 py-2 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
                     required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="At least 6 characters"
+                    className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
                   />
                   <button
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -860,40 +1207,55 @@ function ForgotPasswordModal({ onClose }: { onClose: () => void }) {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-foreground mb-1">Confirm New Password</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Confirm New Password <span className="text-red-500">*</span>
+                </label>
                 <div className="relative">
-                  <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
                     type={showNewPassword ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter new password"
-                    className="w-full pl-9 pr-3 py-2 bg-white border border-border rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-[#106A2E]/30 focus:border-[#106A2E]"
                     required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter your new password"
+                    className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 transition-all"
                   />
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex-1 py-2 border border-border text-foreground rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 py-2 bg-[#106A2E] text-white rounded-lg text-xs font-semibold hover:bg-[#0D7856] transition-colors disabled:opacity-70 flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                  {loading ? "Resetting..." : "Reset Password"}
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-semibold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Resetting Password...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Reset Password</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
             </form>
           )}
         </div>
+
+        {/* Modal Footer */}
+        <div className="bg-slate-50/80 border-t border-slate-100 px-6 py-3.5 flex items-center justify-between">
+          <p className="text-[11px] text-slate-500 font-medium">Remembered your password?</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs text-emerald-700 hover:text-emerald-800 font-bold transition-colors cursor-pointer hover:underline"
+          >
+            Return to Sign In
+          </button>
+        </div>
+
       </div>
     </div>
   );

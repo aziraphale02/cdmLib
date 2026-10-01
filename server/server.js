@@ -433,7 +433,132 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
   }
 });
 
-// Self-service Password Reset / Forgot Password
+// In-Memory Store for Email OTP Reset Tokens
+const otpStore = new Map();
+
+// 1. Send OTP to Email for Password Reset
+app.post('/api/auth/send-otp', authLimiter, (req, res) => {
+  const { email } = req.body;
+  if (!email || !email.trim()) {
+    return res.status(400).json({ error: 'Please provide a valid email address.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+
+  try {
+    let librarian = db.prepare('SELECT id, username, email FROM librarians WHERE LOWER(email) = LOWER(?)').get(cleanEmail);
+    let student = null;
+    let accountType = 'librarian';
+
+    if (!librarian) {
+      student = db.prepare('SELECT id, name, email FROM students WHERE LOWER(email) = LOWER(?)').get(cleanEmail);
+      accountType = 'student';
+    }
+
+    if (!librarian && !student) {
+      return res.status(404).json({ error: 'No user account found matching this email address.' });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // Expires in 10 minutes
+
+    otpStore.set(cleanEmail, {
+      otp,
+      expiresAt,
+      accountType,
+      id: librarian ? librarian.id : student.id,
+      name: librarian ? librarian.username : student.name
+    });
+
+    logAudit(req, { 
+      action: 'OTP_SENT', 
+      resource: cleanEmail, 
+      details: `OTP sent for ${accountType} password reset` 
+    });
+
+    res.json({ 
+      success: true, 
+      message: `A 6-digit OTP verification code has been sent to ${cleanEmail}.`,
+      otp, // Included for instant demo & testing
+      email: cleanEmail
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 2. Verify OTP Code
+app.post('/api/auth/verify-otp', authLimiter, (req, res) => {
+  const { email, otp } = req.body;
+  if (!email || !otp) {
+    return res.status(400).json({ error: 'Email and OTP verification code are required.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const record = otpStore.get(cleanEmail);
+
+  if (!record) {
+    return res.status(400).json({ error: 'No active OTP request found for this email. Please request a new OTP.' });
+  }
+
+  if (Date.now() > record.expiresAt) {
+    otpStore.delete(cleanEmail);
+    return res.status(400).json({ error: 'OTP code has expired. Please request a new code.' });
+  }
+
+  if (record.otp !== otp.trim()) {
+    return res.status(400).json({ error: 'Incorrect OTP code. Please check your code and try again.' });
+  }
+
+  res.json({ success: true, message: 'OTP verified successfully.' });
+});
+
+// 3. Reset Password via OTP
+app.post('/api/auth/reset-password-otp', authLimiter, (req, res) => {
+  const { email, otp, newPassword } = req.body;
+  if (!email || !otp || !newPassword) {
+    return res.status(400).json({ error: 'Email, OTP code, and new password are required.' });
+  }
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const record = otpStore.get(cleanEmail);
+
+  if (!record) {
+    return res.status(400).json({ error: 'OTP session expired or invalid. Please request a new OTP.' });
+  }
+
+  if (record.otp !== otp.trim() || Date.now() > record.expiresAt) {
+    return res.status(400).json({ error: 'Invalid or expired OTP code.' });
+  }
+
+  try {
+    const hashedPassword = hashPassword(newPassword);
+
+    if (record.accountType === 'librarian') {
+      db.prepare('UPDATE librarians SET password = ? WHERE id = ?').run(hashedPassword, record.id);
+    } else {
+      db.prepare('UPDATE students SET password = ? WHERE id = ?').run(hashedPassword, record.id);
+    }
+
+    otpStore.delete(cleanEmail);
+
+    logAudit(req, { 
+      action: 'PASSWORD_RESET_OTP_SUCCESS', 
+      resource: cleanEmail, 
+      details: `Password reset successfully via OTP for ${record.accountType}` 
+    });
+
+    res.json({ success: true, message: 'Password updated successfully! You can now log in with your new password.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Legacy Self-service Password Reset via Employee ID
 app.post('/api/auth/reset-password', authLimiter, (req, res) => {
   const { identifier, employeeId, newPassword } = req.body;
   if (!identifier || !employeeId || !newPassword) {

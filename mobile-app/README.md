@@ -1,4 +1,4 @@
-# CDM OneLib · Mobile Student Subsystem 📱
+# CDM LibHub · Mobile Student Subsystem 📱
 
 > **Colegio de Montalban — Integrated Library Management System (ILMS)**  
 > **Student Mobile Portal & Digital Pass Subsystem**  

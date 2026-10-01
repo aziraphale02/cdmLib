@@ -1,0 +1,26 @@
+{
+  "name": "CDM LibHub · Student Pass & Library",
+  "short_name": "CDM LibHub",
+  "description": "Official Student Mobile Companion & OPAC for Colegio de Montalban Integrated Library Management System.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0F172A",
+  "theme_color": "#106A2E",
+  "categories": ["education", "books", "utilities"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

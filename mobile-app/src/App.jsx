@@ -176,7 +176,8 @@ export default function CDMLibraryMobile() {
   });
   const [isAuthenticated, setIsAuthenticated] = useState(true);
   
-  // Fresh Student Profile
+  // Fresh Student Profile & Faculty Pass Support
+  const [passRole, setPassRole] = useState("student"); // "student" | "faculty"
   const [student, setStudent] = useState({
     id: "2024-0042",
     name: "Juan dela Cruz",
@@ -189,6 +190,20 @@ export default function CDMLibraryMobile() {
     activeLoansCount: 0,
     pendingReservationsCount: 0
   });
+
+  const facultyUser = {
+    id: "EMP-2024-0108",
+    name: "Prof. Maria Clara Santos, M.Sc.",
+    email: "m.santos@cdm.edu.ph",
+    institute: "ICS",
+    department: "Computer Studies",
+    title: "Assistant Professor II",
+    role: "faculty",
+    clearanceStatus: "CLEARED",
+    maxLoans: 10,
+    maxDays: 30,
+    privilegeBadge: "FACULTY EXTENDED PRIVILEGES (10 BOOKS • 30 DAYS)"
+  };
 
   // UI Interactive States (Starts Fresh and Clean)
   const [books, setBooks] = useState(INITIAL_BOOKS);
@@ -507,7 +522,7 @@ export default function CDMLibraryMobile() {
       await fetch(`${API_BASE}/reservations/${resId}/cancel`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: "Cancelled by Student Patron via CDM OneLib" })
+        body: JSON.stringify({ reason: "Cancelled by Student Patron via CDM LibHub" })
       });
     } catch (_) {}
 
@@ -707,6 +722,9 @@ export default function CDMLibraryMobile() {
               {activeTab === "home" && (
                 <StudentHomeScreen
                   student={student}
+                  facultyUser={facultyUser}
+                  passRole={passRole}
+                  setPassRole={setPassRole}
                   loans={loans}
                   reservations={reservations}
                   recommendedBooks={recommendedBooks}
@@ -888,9 +906,14 @@ export default function CDMLibraryMobile() {
             onClose={() => setIsScannerOpen(false)}
             onScan={(code) => {
               setIsScannerOpen(false);
-              if (code.includes("ACCESSION") || code.startsWith("202")) {
+              if (code.includes("FACULTY") || code.startsWith("EMP")) {
+                setPassRole("faculty");
                 setActiveTab("pass");
-                showToast(`Accession QR Verified: ${student.id} (${student.name})`);
+                showToast(`Faculty Pass Verified: Prof. Maria Clara Santos (EMP-2024-0108) — 10 Books Allowed`);
+              } else if (code.includes("ACCESSION") || code.startsWith("202")) {
+                setPassRole("student");
+                setActiveTab("pass");
+                showToast(`Student Accession QR Verified: ${student.id} (${student.name})`);
               } else {
                 setSearchQuery(code);
                 showToast(`Scanned Barcode: ${code}`);
@@ -925,6 +948,9 @@ export default function CDMLibraryMobile() {
         {isPassExpanded && (
           <FullScreenPassModal
             student={student}
+            facultyUser={facultyUser}
+            passRole={passRole}
+            setPassRole={setPassRole}
             onClose={() => setIsPassExpanded(false)}
           />
         )}
@@ -958,10 +984,271 @@ export default function CDMLibraryMobile() {
               setShowSignOutConfirm(false);
               setIsAuthenticated(false);
               setActiveTab("home");
-              showToast("Signed out successfully from CDM OneLib.");
+              showToast("Signed out successfully from CDM LibHub.");
             }}
             onCancel={() => setShowSignOutConfirm(false)}
           />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// COMPONENT: MOBILE OTP PASSWORD RESET MODAL
+// ============================================================================
+function MobileOtpResetModal({ onClose }) {
+  const [step, setStep] = useState(1);
+  const [email, setEmail] = useState("");
+  const [otpInput, setOtpInput] = useState("");
+  const [demoOtp, setDemoOtp] = useState(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  const handleSendOtp = (e) => {
+    e.preventDefault();
+    if (!email.trim() || !email.includes("@")) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    fetch(`${API_BASE}/auth/send-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim() }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        setLoading(false);
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setDemoOtp(data.otp || null);
+          setStep(2);
+        }
+      })
+      .catch(() => {
+        setLoading(false);
+        setError("Failed to send OTP. Please try again.");
+      });
+  };
+
+  const handleVerifyOtp = (e) => {
+    e.preventDefault();
+    if (!otpInput.trim() || otpInput.trim().length !== 6) {
+      setError("Please enter the 6-digit OTP verification code.");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    fetch(`${API_BASE}/auth/verify-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim(), otp: otpInput.trim() }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        setLoading(false);
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setStep(3);
+        }
+      })
+      .catch(() => {
+        setLoading(false);
+        setError("OTP verification failed.");
+      });
+  };
+
+  const handleResetPassword = (e) => {
+    e.preventDefault();
+    if (!newPassword || newPassword.length < 6) {
+      setError("New password must be at least 6 characters long.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setError("");
+    setLoading(true);
+    fetch(`${API_BASE}/auth/reset-password-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: email.trim(), otp: otpInput.trim(), newPassword }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        setLoading(false);
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setSuccess(true);
+        }
+      })
+      .catch(() => {
+        setLoading(false);
+        setError("Failed to update password.");
+      });
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(15, 23, 42, 0.75)",
+        backdropFilter: "blur(4px)",
+        zIndex: 200,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          background: "#FFFFFF",
+          borderRadius: 20,
+          padding: 20,
+          width: "100%",
+          maxWidth: 360,
+          boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <KeyRound size={20} color={TOKENS.primary} />
+            <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: "#0F172A" }}>
+              Reset Password via Email OTP
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 28, height: 28, cursor: "pointer" }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {error && (
+          <div style={{ background: "#FEF2F2", color: "#B91C1C", padding: 10, borderRadius: 8, fontSize: 11.5, marginBottom: 12, display: "flex", gap: 6, alignItems: "center" }}>
+            <AlertCircle size={14} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {success ? (
+          <div style={{ textAlign: "center", padding: "12px 0" }}>
+            <CheckCircle2 size={40} color="#106A2E" style={{ margin: "0 auto 10px" }} />
+            <h4 style={{ fontSize: 15, fontWeight: 700, color: "#0F172A", margin: "0 0 6px" }}>Password Updated!</h4>
+            <p style={{ fontSize: 12, color: "#64748B", marginBottom: 16 }}>Your account password has been reset successfully. You can now log in.</p>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{ width: "100%", padding: 10, borderRadius: 10, border: "none", background: TOKENS.primary, color: "#FFFFFF", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+            >
+              Back to Sign In
+            </button>
+          </div>
+        ) : (
+          <>
+            {step === 1 && (
+              <form onSubmit={handleSendOtp} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <p style={{ fontSize: 11.5, color: "#64748B", margin: 0, lineHeight: 1.4 }}>
+                  Enter your registered email address. We'll send you a 6-digit OTP verification code.
+                </p>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>EMAIL ADDRESS</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="student@cdm.edu.ph"
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{ padding: 11, borderRadius: 10, border: "none", background: TOKENS.primary, color: "#FFFFFF", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
+                >
+                  {loading ? "Sending OTP..." : "Send OTP Code →"}
+                </button>
+              </form>
+            )}
+
+            {step === 2 && (
+              <form onSubmit={handleVerifyOtp} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", padding: 10, borderRadius: 8, fontSize: 11, color: "#065F46" }}>
+                  <p style={{ margin: 0, fontWeight: 700 }}>OTP Sent to {email}</p>
+                  {demoOtp && (
+                    <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFFFFF", padding: "4px 8px", borderRadius: 6, border: "1px solid #6EE7B7" }}>
+                      <span>Code: <strong>{demoOtp}</strong></span>
+                      <button type="button" onClick={() => setOtpInput(demoOtp)} style={{ background: "none", border: "none", color: "#047857", fontSize: 10, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>Auto-fill</button>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>ENTER 6-DIGIT OTP</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={otpInput}
+                    onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ""))}
+                    placeholder="123456"
+                    style={{ width: "100%", textAlign: "center", letterSpacing: 6, fontFamily: "monospace", fontSize: 18, fontWeight: 800, padding: 10, borderRadius: 10, border: "1px solid #CBD5E1", outline: "none", boxSizing: "border-box" }}
+                    required
+                  />
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" onClick={() => setStep(1)} style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid #CBD5E1", background: "#F8FAFC", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Back</button>
+                  <button type="submit" disabled={loading || otpInput.length !== 6} style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: TOKENS.primary, color: "#FFFFFF", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Verify OTP</button>
+                </div>
+              </form>
+            )}
+
+            {step === 3 && (
+              <form onSubmit={handleResetPassword} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>NEW PASSWORD</label>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="At least 6 characters"
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 4 }}>CONFIRM NEW PASSWORD</label>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter password"
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1px solid #CBD5E1", fontSize: 13, outline: "none", boxSizing: "border-box" }}
+                    required
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{ padding: 11, borderRadius: 10, border: "none", background: TOKENS.primary, color: "#FFFFFF", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
+                >
+                  {loading ? "Updating..." : "Update Password"}
+                </button>
+              </form>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -979,6 +1266,7 @@ function AuthScreen({ onLoginSuccess, onOpenStaffPin }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showOtpModal, setShowOtpModal] = useState(false);
 
   const [regFirstName, setRegFirstName] = useState("");
   const [regLastName, setRegLastName] = useState("");
@@ -1286,8 +1574,29 @@ function AuthScreen({ onLoginSuccess, onOpenStaffPin }) {
               >
                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
+              <div style={{ textAlign: "right", marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowOtpModal(true)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: TOKENS.primary,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                  }}
+                >
+                  Forgot password? Reset via Email OTP
+                </button>
+              </div>
             </div>
           </div>
+
+          {showOtpModal && (
+            <MobileOtpResetModal onClose={() => setShowOtpModal(false)} />
+          )}
 
           <button
             type="submit"
@@ -1507,6 +1816,9 @@ function AuthScreen({ onLoginSuccess, onOpenStaffPin }) {
 // ============================================================================
 function StudentHomeScreen({
   student,
+  facultyUser,
+  passRole = "student",
+  setPassRole,
   loans,
   reservations,
   recommendedBooks,
@@ -1689,109 +2001,123 @@ function StudentHomeScreen({
         </div>
       </div>
 
-      {/* Modern Virtual Card Widget */}
-      <div
-        onClick={onOpenPass}
-        style={{
-          background: `linear-gradient(135deg, ${TOKENS.primary} 0%, ${TOKENS.primaryDark} 100%)`,
-          borderRadius: 22,
-          padding: "16px 18px",
-          color: "#FFFFFF",
-          boxShadow: "0 10px 25px rgba(16, 106, 46, 0.25)",
-          marginBottom: 16,
-          cursor: "pointer",
-          position: "relative",
-          overflow: "hidden",
-          border: "1px solid rgba(244, 211, 94, 0.3)",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            right: -20,
-            bottom: -20,
-            width: 120,
-            height: 120,
-            borderRadius: "50%",
-            background: "rgba(255, 255, 255, 0.06)",
-            pointerEvents: "none",
-          }}
-        />
+      {/* Modern Virtual Card Widget (Supports Student & Faculty Modes) */}
+      {(() => {
+        const isFaculty = passRole === "faculty";
+        const passUser = isFaculty ? facultyUser : student;
+        const passQrVal = isFaculty
+          ? `CDM-FACULTY:${facultyUser.id}:${facultyUser.name}:${facultyUser.institute}:FACULTY_EXTENDED:CLEARED`
+          : `CDM-ACCESSION:${student.id}:${student.name}:${student.program || 'BSIT'}:${student.clearanceStatus || 'CLEARED'}`;
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-          <div>
-            <span
+        return (
+          <div
+            onClick={onOpenPass}
+            style={{
+              background: isFaculty
+                ? `linear-gradient(135deg, #0F172A 0%, #1E3A8A 50%, #2563EB 100%)`
+                : `linear-gradient(135deg, ${TOKENS.primary} 0%, ${TOKENS.primaryDark} 100%)`,
+              borderRadius: 22,
+              padding: "16px 18px",
+              color: "#FFFFFF",
+              boxShadow: isFaculty
+                ? "0 10px 25px rgba(37, 99, 235, 0.3)"
+                : "0 10px 25px rgba(16, 106, 46, 0.25)",
+              marginBottom: 16,
+              cursor: "pointer",
+              position: "relative",
+              overflow: "hidden",
+              border: isFaculty
+                ? "1px solid rgba(245, 158, 11, 0.4)"
+                : "1px solid rgba(244, 211, 94, 0.3)",
+            }}
+          >
+            <div
               style={{
-                fontSize: 9.5,
-                fontWeight: 800,
-                letterSpacing: 1,
-                opacity: 0.85,
-                textTransform: "uppercase",
-                background: "rgba(255,255,255,0.2)",
-                padding: "2px 8px",
-                borderRadius: 999,
+                position: "absolute",
+                right: -20,
+                bottom: -20,
+                width: 120,
+                height: 120,
+                borderRadius: "50%",
+                background: "rgba(255, 255, 255, 0.06)",
+                pointerEvents: "none",
+              }}
+            />
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+              <div>
+                <span
+                  style={{
+                    fontSize: 9.5,
+                    fontWeight: 800,
+                    letterSpacing: 1,
+                    opacity: 0.9,
+                    textTransform: "uppercase",
+                    background: isFaculty ? "rgba(245, 158, 11, 0.25)" : "rgba(255,255,255,0.2)",
+                    color: isFaculty ? "#FDE047" : "#FFFFFF",
+                    padding: "2px 8px",
+                    borderRadius: 999,
+                    border: isFaculty ? "1px solid rgba(253, 224, 71, 0.4)" : "none",
+                  }}
+                >
+                  {isFaculty ? "CDM FACULTY / STAFF PASS 🎓" : "CDM Virtual Pass"}
+                </span>
+                <h3 style={{ fontSize: 16.5, fontWeight: 800, margin: "6px 0 2px", color: "#FFFFFF" }}>
+                  {passUser.name}
+                </h3>
+                <p style={{ margin: "2px 0 0", fontSize: 11, opacity: 0.9, fontFamily: "monospace" }}>
+                  ID: {passUser.id}
+                </p>
+              </div>
+
+              <div
+                style={{
+                  background: "#FFFFFF",
+                  padding: 5,
+                  borderRadius: 10,
+                  boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <DigitalQRCode value={passQrVal} size={46} />
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontSize: 10.5,
+                fontWeight: 700,
+                borderTop: "1px solid rgba(255, 255, 255, 0.15)",
+                paddingTop: 10,
+                marginTop: 4,
               }}
             >
-              CDM Virtual Pass
-            </span>
-            <h3 style={{ fontSize: 17, fontWeight: 800, margin: "6px 0 2px", color: "#FFFFFF" }}>
-              {student.name}
-            </h3>
-            <p style={{ margin: "2px 0 0", fontSize: 11, opacity: 0.9, fontFamily: "monospace" }}>
-              ID: {student.id}
-            </p>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  background: isFaculty ? "rgba(59, 130, 246, 0.3)" : "rgba(255,255,255,0.18)",
+                  padding: "3px 8px",
+                  borderRadius: 999,
+                  color: isFaculty ? "#93C5FD" : student.clearanceStatus === "CLEARED" ? "#86EFAC" : "#FDE047",
+                }}
+              >
+                <CheckCircle2 size={13} />
+                {isFaculty ? "FACULTY EXTENDED PRIVILEGE (10 BOOKS)" : student.clearanceStatus === "CLEARED" ? "CLEAR TO BORROW" : "OVERDUE HOLD"}
+              </span>
+              <span style={{ opacity: 0.8, display: "flex", alignItems: "center", gap: 2 }}>
+                Tap to expand <Maximize2 size={11} />
+              </span>
+            </div>
           </div>
-
-          <div
-            style={{
-              background: "#FFFFFF",
-              padding: 5,
-              borderRadius: 10,
-              boxShadow: "0 4px 10px rgba(0,0,0,0.15)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <DigitalQRCode value={`CDM-ACCESSION:${student.id}:${student.name}:${student.program || 'BSIT'}:${student.clearanceStatus || 'CLEARED'}`} size={46} />
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            fontSize: 10.5,
-            fontWeight: 700,
-            borderTop: "1px solid rgba(255, 255, 255, 0.15)",
-            paddingTop: 10,
-            marginTop: 4,
-          }}
-        >
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              background: "rgba(255,255,255,0.18)",
-              padding: "3px 8px",
-              borderRadius: 999,
-              color: student.clearanceStatus === "CLEARED" ? "#86EFAC" : "#FDE047",
-            }}
-          >
-            {student.clearanceStatus === "CLEARED" ? (
-              <CheckCircle2 size={13} />
-            ) : (
-              <AlertCircle size={13} />
-            )}
-            {student.clearanceStatus === "CLEARED" ? "CLEAR TO BORROW" : "OVERDUE HOLD"}
-          </span>
-          <span style={{ opacity: 0.8, display: "flex", alignItems: "center", gap: 2 }}>
-            Tap to expand <Maximize2 size={11} />
-          </span>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Horizontal Metric Strip */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 20 }}>
@@ -3289,23 +3615,40 @@ function BarcodeScannerModal({ onClose, onScan }) {
             Scan ISBN: Algorithms
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => onScan("2024-1142")}
-          style={{
-            width: "100%",
-            padding: "10px 0",
-            borderRadius: 10,
-            border: "1px solid #106A2E",
-            background: "rgba(16, 106, 46, 0.2)",
-            color: "#86EFAC",
-            fontSize: 11,
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          Scan Student Accession QR (Pass #2024-1142)
-        </button>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => onScan("2024-1142")}
+            style={{
+              padding: "10px 4px",
+              borderRadius: 10,
+              border: "1px solid #106A2E",
+              background: "rgba(16, 106, 46, 0.2)",
+              color: "#86EFAC",
+              fontSize: 10.5,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Student Pass (#2024-1142)
+          </button>
+          <button
+            type="button"
+            onClick={() => onScan("EMP-2024-0108")}
+            style={{
+              padding: "10px 4px",
+              borderRadius: 10,
+              border: "1px solid #3B82F6",
+              background: "rgba(59, 130, 246, 0.2)",
+              color: "#93C5FD",
+              fontSize: 10.5,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Faculty Pass (#EMP-0108)
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -3314,13 +3657,20 @@ function BarcodeScannerModal({ onClose, onScan }) {
 // ============================================================================
 // COMPONENT: SCREEN 6 - FULL-SCREEN DIGITAL STUDENT PASS MODAL
 // ============================================================================
-function FullScreenPassModal({ student, onClose }) {
+function FullScreenPassModal({ student, facultyUser, passRole, setPassRole, onClose }) {
+  const isFaculty = passRole === "faculty";
+  const currentUser = isFaculty ? facultyUser : student;
+  const qrValue = isFaculty
+    ? `CDM-FACULTY:${facultyUser.id}:${facultyUser.name}:${facultyUser.institute}:FACULTY_EXTENDED:CLEARED`
+    : `CDM-ACCESSION:${student.id}:${student.name}:${student.program || 'BSIT'}:${student.clearanceStatus || 'CLEARED'}`;
+
   return (
     <div
       style={{
         position: "absolute",
         inset: 0,
-        background: "#FFFFFF",
+        background: isFaculty ? "#0F172A" : "#FFFFFF",
+        color: isFaculty ? "#FFFFFF" : "#0F172A",
         zIndex: 100,
         display: "flex",
         flexDirection: "column",
@@ -3332,8 +3682,8 @@ function FullScreenPassModal({ student, onClose }) {
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Building2 size={24} color={TOKENS.primary} />
-          <span style={{ fontSize: 14, fontWeight: 800, color: TOKENS.primary }}>
+          <Building2 size={24} color={isFaculty ? "#60A5FA" : TOKENS.primary} />
+          <span style={{ fontSize: 14, fontWeight: 800, color: isFaculty ? "#60A5FA" : TOKENS.primary }}>
             COLEGIO DE MONTALBAN
           </span>
         </div>
@@ -3341,7 +3691,8 @@ function FullScreenPassModal({ student, onClose }) {
           type="button"
           onClick={onClose}
           style={{
-            background: "#F1F5F9",
+            background: isFaculty ? "rgba(255,255,255,0.15)" : "#F1F5F9",
+            color: isFaculty ? "#FFFFFF" : "#0F172A",
             border: "none",
             borderRadius: "50%",
             width: 36,
@@ -3356,78 +3707,137 @@ function FullScreenPassModal({ student, onClose }) {
         </button>
       </div>
 
-      <div style={{ textAlign: "center", margin: "20px 0" }}>
-        <span
+      <div style={{ textAlign: "center", margin: "16px 0" }}>
+        {/* Pass Type Switcher Pill */}
+        <div
           style={{
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: 1,
-            color: TOKENS.primary,
-            background: TOKENS.primaryGlass,
-            padding: "4px 12px",
+            display: "inline-flex",
+            background: isFaculty ? "rgba(255,255,255,0.1)" : "#F1F5F9",
+            padding: 4,
             borderRadius: 999,
+            marginBottom: 16,
+            border: isFaculty ? "1px solid rgba(255,255,255,0.2)" : "1px solid #E2E8F0",
           }}
         >
-          OFFICIAL ACCESSION PASS
-        </span>
+          <button
+            type="button"
+            onClick={() => setPassRole("student")}
+            style={{
+              padding: "5px 14px",
+              borderRadius: 999,
+              border: "none",
+              fontSize: 11,
+              fontWeight: 700,
+              background: !isFaculty ? TOKENS.primary : "transparent",
+              color: !isFaculty ? "#FFFFFF" : isFaculty ? "#94A3B8" : "#64748B",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+          >
+            🎓 Student Pass
+          </button>
+          <button
+            type="button"
+            onClick={() => setPassRole("faculty")}
+            style={{
+              padding: "5px 14px",
+              borderRadius: 999,
+              border: "none",
+              fontSize: 11,
+              fontWeight: 700,
+              background: isFaculty ? "#2563EB" : "transparent",
+              color: isFaculty ? "#FFFFFF" : "#64748B",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+          >
+            💼 Faculty Pass
+          </button>
+        </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, margin: "14px 0 4px" }}>
+        <div>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: 1,
+              color: isFaculty ? "#93C5FD" : TOKENS.primary,
+              background: isFaculty ? "rgba(59, 130, 246, 0.2)" : TOKENS.primaryGlass,
+              padding: "4px 12px",
+              borderRadius: 999,
+              border: isFaculty ? "1px solid rgba(147, 197, 253, 0.3)" : "none",
+            }}
+          >
+            {isFaculty ? "OFFICIAL FACULTY & STAFF PASS" : "OFFICIAL ACCESSION PASS"}
+          </span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, margin: "16px 0 4px" }}>
           <div
             style={{
-              width: 42,
-              height: 42,
+              width: 44,
+              height: 44,
               borderRadius: 14,
-              border: `2px solid ${TOKENS.accentGold}`,
-              background: `linear-gradient(135deg, ${TOKENS.primary} 0%, ${TOKENS.accentGoldDark} 100%)`,
+              border: isFaculty ? "2px solid #F59E0B" : `2px solid ${TOKENS.accentGold}`,
+              background: isFaculty
+                ? "linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%)"
+                : `linear-gradient(135deg, ${TOKENS.primary} 0%, ${TOKENS.accentGoldDark} 100%)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               color: "#FFFFFF",
               fontWeight: 700,
               fontSize: 16,
-              boxShadow: "0 4px 12px rgba(16,106,46,0.2)",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
               cursor: "pointer",
               flexShrink: 0,
             }}
           >
-            {student.name.charAt(0)}
+            {currentUser.name.charAt(0)}
           </div>
-          <h2 style={{ fontSize: 20, fontWeight: 800, color: "#0F172A", margin: 0 }}>
-            {student.name}
+          <h2 style={{ fontSize: 19, fontWeight: 800, color: isFaculty ? "#FFFFFF" : "#0F172A", margin: 0 }}>
+            {currentUser.name}
           </h2>
         </div>
-        <p style={{ margin: "0 0 16px", fontSize: 13, color: "#64748B", fontWeight: 600 }}>
-          {student.institute} • {student.program} ({student.year})
+        <p style={{ margin: "0 0 16px", fontSize: 12.5, color: isFaculty ? "#94A3B8" : "#64748B", fontWeight: 600 }}>
+          {isFaculty
+            ? `${facultyUser.institute} • ${facultyUser.title}`
+            : `${student.institute} • ${student.program} (${student.year})`}
         </p>
 
         <div
           style={{
             background: "#FFFFFF",
-            border: "3px solid #0F172A",
+            border: isFaculty ? "3px solid #3B82F6" : "3px solid #0F172A",
             borderRadius: 24,
             padding: 16,
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+            boxShadow: isFaculty ? "0 10px 30px rgba(59, 130, 246, 0.3)" : "0 10px 30px rgba(0,0,0,0.1)",
           }}
         >
-          <DigitalQRCode value={`CDM-ACCESSION:${student.id}:${student.name}:${student.program || 'BSIT'}:${student.clearanceStatus || 'CLEARED'}`} size={190} />
+          <DigitalQRCode value={qrValue} size={190} />
         </div>
 
-        <div style={{ marginTop: 16, fontFamily: "monospace", fontSize: 16, fontWeight: 800, letterSpacing: 2 }}>
-          {student.id}
+        <div style={{ marginTop: 16, fontFamily: "monospace", fontSize: 16, fontWeight: 800, letterSpacing: 2, color: isFaculty ? "#F59E0B" : "#0F172A" }}>
+          {currentUser.id}
         </div>
+        {isFaculty && (
+          <div style={{ marginTop: 6, fontSize: 10.5, fontWeight: 700, color: "#93C5FD" }}>
+            ✨ {facultyUser.privilegeBadge}
+          </div>
+        )}
       </div>
 
       <div
         style={{
-          background: "#F8FAFC",
+          background: isFaculty ? "rgba(255,255,255,0.08)" : "#F8FAFC",
           borderRadius: 14,
           padding: 12,
           textAlign: "center",
           fontSize: 11,
-          color: "#64748B",
+          color: isFaculty ? "#94A3B8" : "#64748B",
         }}
       >
         💡 <em>Screen brightness boosted for optical turnstile barcode recognition.</em>
@@ -4219,7 +4629,7 @@ function SignOutConfirmModal({ onConfirm, onCancel }) {
         </div>
 
         <h3 style={{ fontSize: 17, fontWeight: 800, color: "#0F172A", margin: "0 0 8px" }}>
-          Sign Out of CDM OneLib?
+          Sign Out of CDM LibHub?
         </h3>
         <p style={{ fontSize: 12.5, color: "#64748B", margin: "0 0 20px", lineHeight: 1.4 }}>
           Are you sure you want to sign out? You will need to sign in again with your Student ID to access your digital pass and library records.

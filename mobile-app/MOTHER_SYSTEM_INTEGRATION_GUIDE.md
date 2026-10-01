@@ -1,14 +1,14 @@
 # CDM OneServe / Mother System Integration Guide 🔌
 
 > **Documentation for Developers of the Mother System (CDM OneServe / OneStudent)**  
-> **Topic:** Integrating the CDM OneLib Mobile Subsystem & Connecting Data to the Desktop ILMS  
+> **Topic:** Integrating the CDM LibHub Mobile Subsystem & Connecting Data to the Desktop CDM ILMS  
 > **Capstone:** BSIT 4C Capstone Group 9
 
 ---
 
 ## 🏛️ Architecture Overview
 
-The **CDM OneLib Mobile Subsystem** is designed as an independent client module that connects directly to the **CDM Library Backend REST API**. 
+The **CDM LibHub Mobile Subsystem** is designed as an independent client module that connects directly to the **CDM Library Backend REST API (CDM ILMS)**. 
 
 When a student performs an action inside the Mobile App (such as reserving a book or presenting their QR pass at the entrance), the data is transmitted to the Library API, immediately updating the central database and reflecting in the **Desktop Librarian Portal**.
 
