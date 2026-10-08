@@ -90,7 +90,7 @@ function authenticateToken(req, res, next) {
   
   const user = verifyJwt(token);
   if (!user) {
-    return res.status(403).json({ error: 'Invalid or expired authentication token.' });
+    return res.status(401).json({ error: 'Invalid or expired authentication token.' });
   }
   
   req.user = user;
@@ -1395,8 +1395,25 @@ app.delete('/api/students/:id', authenticateToken, (req, res) => {
   }
 });
 
-// ─── Librarian Management API ────────────────────────────────────────────────
+// ─── Librarian Management API (Role-Based Access Control) ───────────────────
+function canManageLibrarians(role) {
+  if (!role) return false;
+  const normalized = String(role).toLowerCase().trim();
+  return (
+    normalized === 'admin' ||
+    normalized === 'head librarian' ||
+    normalized === 'librarian head' ||
+    normalized === 'head' ||
+    normalized === 'administrator' ||
+    normalized.includes('head') ||
+    normalized.includes('admin')
+  );
+}
+
 app.get('/api/librarians', authenticateToken, (req, res) => {
+  if (!canManageLibrarians(req.user?.role)) {
+    return res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
+  }
   try {
     const librarians = db.prepare('SELECT id, first_name, last_name, email, phone, employee_id, role, username, status FROM librarians').all();
     res.json(librarians.map(u => ({
@@ -1417,7 +1434,7 @@ app.get('/api/librarians', authenticateToken, (req, res) => {
 });
 
 app.put('/api/librarians/:id/status', authenticateToken, (req, res) => {
-  if (req.user.role !== 'Admin' && req.user.role !== 'Head Librarian') {
+  if (!canManageLibrarians(req.user?.role)) {
     return res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
   }
   const { id } = req.params;
@@ -1435,7 +1452,7 @@ app.put('/api/librarians/:id/status', authenticateToken, (req, res) => {
 });
 
 app.put('/api/librarians/:id/role', authenticateToken, (req, res) => {
-  if (req.user.role !== 'Admin' && req.user.role !== 'Head Librarian') {
+  if (!canManageLibrarians(req.user?.role)) {
     return res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
   }
   const { id } = req.params;
@@ -1453,7 +1470,7 @@ app.put('/api/librarians/:id/role', authenticateToken, (req, res) => {
 });
 
 app.delete('/api/librarians/:id', authenticateToken, (req, res) => {
-  if (req.user.role !== 'Admin' && req.user.role !== 'Head Librarian') {
+  if (!canManageLibrarians(req.user?.role)) {
     return res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
   }
   const { id } = req.params;

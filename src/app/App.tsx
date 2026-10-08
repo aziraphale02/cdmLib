@@ -36,13 +36,31 @@ window.fetch = async function (url, options) {
     }
   }
   const response = await originalFetch(url, options);
-  if ((response.status === 401 || response.status === 403) && typeof url === "string" && !url.includes("/api/auth/login")) {
+  // Only 401 Unauthorized (expired/missing token) triggers re-login.
+  // 403 Forbidden is an authorization/RBAC denial which must be handled in UI without logging out.
+  if (response.status === 401 && typeof url === "string" && !url.includes("/api/auth/login")) {
     localStorage.removeItem("librarianName");
+    localStorage.removeItem("librarianRole");
     localStorage.removeItem("authToken");
     window.location.reload();
   }
   return response;
 };
+
+// ─── Centralized RBAC Authorization Check ─────────────────────────────────────
+export function canManageLibrarians(role?: string | null): boolean {
+  if (!role) return false;
+  const normalized = String(role).toLowerCase().trim();
+  return (
+    normalized === "admin" ||
+    normalized === "head librarian" ||
+    normalized === "librarian head" ||
+    normalized === "head" ||
+    normalized === "administrator" ||
+    normalized.includes("head") ||
+    normalized.includes("admin")
+  );
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Page = "login" | "register" | "dashboard" | "catalog" | "students" | "borrow" | "reservations" | "returns" | "terms" | "reports" | "librarians";
@@ -4244,6 +4262,7 @@ function UserProfileModal({
 function Sidebar({ currentPage, onNavigate, librarianName, librarianRole, onLogout, collapsed, onToggle, onOpenProfile }: {
   currentPage: Page; onNavigate: (p: Page) => void; librarianName: string; librarianRole: string; onLogout: () => void; collapsed: boolean; onToggle: () => void; onOpenProfile?: () => void;
 }) {
+  const isManager = canManageLibrarians(librarianRole);
   const navItems = [
     { id: "dashboard" as Page, label: "Dashboard", icon: LayoutDashboard },
     { id: "catalog" as Page, label: "Book Catalog", icon: BookOpen },
@@ -4252,7 +4271,7 @@ function Sidebar({ currentPage, onNavigate, librarianName, librarianRole, onLogo
     { id: "reservations" as Page, label: "Reservations", icon: Calendar },
     { id: "returns" as Page, label: "Return Books", icon: RotateCcw },
     { id: "reports" as Page, label: "Reports & Logs", icon: FileText },
-    { id: "librarians" as Page, label: "Librarian Panel", icon: Shield },
+    ...(isManager ? [{ id: "librarians" as Page, label: "Librarian Panel", icon: Shield }] : []),
     { id: "terms" as Page, label: "Terms & Conditions", icon: Info },
   ];
 
@@ -5316,16 +5335,24 @@ interface LibrarianUser {
   status: string;
 }
 
-function LibrariansPage() {
+function LibrariansPage({ librarianRole }: { librarianRole?: string | null }) {
+  const isManager = canManageLibrarians(librarianRole);
   const [librarians, setLibrarians] = useState<LibrarianUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   function fetchLibrarians() {
+    if (!isManager) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     fetch("/api/librarians")
       .then(r => {
-        if (!r.ok) throw new Error("Failed to load librarians list.");
+        if (!r.ok) {
+          if (r.status === 403) throw new Error("Access denied. Administrator privileges required.");
+          throw new Error("Failed to load librarians list.");
+        }
         return r.json();
       })
       .then(data => {
@@ -5339,10 +5366,15 @@ function LibrariansPage() {
   }
 
   useEffect(() => {
-    fetchLibrarians();
-  }, []);
+    if (isManager) {
+      fetchLibrarians();
+    } else {
+      setLoading(false);
+    }
+  }, [isManager]);
 
   function handleStatusUpdate(id: number, newStatus: string) {
+    if (!isManager) return;
     fetch(`/api/librarians/${id}/status`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -5360,6 +5392,7 @@ function LibrariansPage() {
   }
 
   function handleRoleUpdate(id: number, newRole: string) {
+    if (!isManager) return;
     fetch(`/api/librarians/${id}/role`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -5377,6 +5410,7 @@ function LibrariansPage() {
   }
 
   function handleDelete(id: number) {
+    if (!isManager) return;
     if (!confirm("Are you sure you want to delete this librarian account? This cannot be undone.")) return;
     fetch(`/api/librarians/${id}`, {
       method: "DELETE"
@@ -5390,6 +5424,20 @@ function LibrariansPage() {
       }
     })
     .catch(() => alert("Failed to delete account."));
+  }
+
+  if (!isManager) {
+    return (
+      <div className="max-w-md mx-auto mt-16 p-8 bg-white rounded-2xl shadow-sm border border-red-200 text-center space-y-4">
+        <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+          <Shield className="w-6 h-6" />
+        </div>
+        <h2 className="text-lg font-bold text-gray-900">Access Denied</h2>
+        <p className="text-sm text-gray-600">
+          You do not have permission to view or manage librarian accounts. Administrator privileges are required.
+        </p>
+      </div>
+    );
   }
 
   if (loading) {
@@ -5425,13 +5473,13 @@ function LibrariansPage() {
                 <th className="px-5 py-3">Email & Contact</th>
                 <th className="px-5 py-3">Role</th>
                 <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3 text-right">Actions</th>
+                {isManager && <th className="px-5 py-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-sm">
               {librarians.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">No accounts found.</td>
+                  <td colSpan={isManager ? 6 : 5} className="px-5 py-8 text-center text-muted-foreground">No accounts found.</td>
                 </tr>
               ) : (
                 librarians.map(lib => (
@@ -5457,34 +5505,36 @@ function LibrariansPage() {
                         {lib.status === 'active' ? 'Active' : 'Pending Approval'}
                       </span>
                     </td>
-                    <td className="px-5 py-4 text-right space-x-1.5 whitespace-nowrap">
-                      {lib.status === 'pending' ? (
-                        <>
-                          <button onClick={() => handleStatusUpdate(lib.id, 'active')}
-                            className="px-2.5 py-1 bg-[#106A2E] text-white text-xs font-semibold rounded hover:bg-[#0b4f21] transition-colors cursor-pointer">
-                            Approve
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button onClick={() => handleStatusUpdate(lib.id, lib.status === 'active' ? 'inactive' : 'active')}
-                            className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer
-                              ${lib.status === 'active' ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-green-100 text-green-800 hover:bg-green-200'}`}>
-                            {lib.status === 'active' ? 'Suspend' : 'Activate'}
-                          </button>
-                        </>
-                      )}
-                      
-                      <button onClick={() => handleRoleUpdate(lib.id, lib.role === 'Admin' ? 'Librarian' : 'Admin')}
-                        className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded hover:bg-blue-100 transition-colors cursor-pointer">
-                        Make {lib.role === 'Admin' ? 'Staff' : 'Admin'}
-                      </button>
+                    {isManager && (
+                      <td className="px-5 py-4 text-right space-x-1.5 whitespace-nowrap">
+                        {lib.status === 'pending' ? (
+                          <>
+                            <button onClick={() => handleStatusUpdate(lib.id, 'active')}
+                              className="px-2.5 py-1 bg-[#106A2E] text-white text-xs font-semibold rounded hover:bg-[#0b4f21] transition-colors cursor-pointer">
+                              Approve
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => handleStatusUpdate(lib.id, lib.status === 'active' ? 'inactive' : 'active')}
+                              className={`px-2.5 py-1 text-xs font-semibold rounded transition-colors cursor-pointer
+                                ${lib.status === 'active' ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-green-100 text-green-800 hover:bg-green-200'}`}>
+                              {lib.status === 'active' ? 'Suspend' : 'Activate'}
+                            </button>
+                          </>
+                        )}
+                        
+                        <button onClick={() => handleRoleUpdate(lib.id, lib.role === 'Admin' ? 'Librarian' : 'Admin')}
+                          className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-semibold rounded hover:bg-blue-100 transition-colors cursor-pointer">
+                          Make {lib.role === 'Admin' ? 'Staff' : 'Admin'}
+                        </button>
 
-                      <button onClick={() => handleDelete(lib.id)}
-                        className="px-2 py-1 bg-red-50 text-red-600 text-xs font-semibold rounded hover:bg-red-100 transition-colors cursor-pointer">
-                        Delete
-                      </button>
-                    </td>
+                        <button onClick={() => handleDelete(lib.id)}
+                          className="px-2 py-1 bg-red-50 text-red-600 text-xs font-semibold rounded hover:bg-red-100 transition-colors cursor-pointer">
+                          Delete
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -5615,13 +5665,18 @@ export default function App() {
     if (typeof window !== "undefined") {
       const p = new URLSearchParams(window.location.search);
       if (p.get("demo") === "admin") return "admin";
+      return localStorage.getItem("librarianRole") || null;
     }
     return null;
   });
   const [currentPage, setCurrentPage] = useState<Page>(() => {
     if (typeof window !== "undefined") {
       const p = new URLSearchParams(window.location.search).get("page") as Page;
+      const initialRole = new URLSearchParams(window.location.search).get("demo") === "admin" ? "admin" : localStorage.getItem("librarianRole");
       if (p && ["dashboard", "catalog", "students", "borrow", "reservations", "returns", "reports", "librarians", "terms"].includes(p)) {
+        if (p === "librarians" && !canManageLibrarians(initialRole)) {
+          return "dashboard";
+        }
         return p;
       }
     }
@@ -5684,6 +5739,21 @@ export default function App() {
       window.removeEventListener("focus", handleWindowFocus);
     };
   }, [librarianName]);
+
+  // Guard against unauthorized route navigation
+  useEffect(() => {
+    if (currentPage === "librarians" && !canManageLibrarians(librarianRole)) {
+      setCurrentPage("dashboard");
+    }
+  }, [currentPage, librarianRole]);
+
+  function handleNavigate(p: Page) {
+    if (p === "librarians" && !canManageLibrarians(librarianRole)) {
+      setCurrentPage("dashboard");
+      return;
+    }
+    setCurrentPage(p);
+  }
 
   function handleLogin(name: string, role: string) {
     setLibrarianName(name);
@@ -5776,7 +5846,7 @@ export default function App() {
         books={books}
         transactions={transactions}
         reservations={reservations}
-        onNavigate={setCurrentPage} 
+        onNavigate={handleNavigate} 
         onLogout={handleLogout}
       >
         <AnimatePresence mode="wait">
@@ -5793,7 +5863,7 @@ export default function App() {
                 transactions={transactions}
                 reservations={reservations}
                 librarianName={librarianName} 
-                onNavigate={setCurrentPage} 
+                onNavigate={handleNavigate} 
               />
             )}
             {currentPage === "catalog" && (
@@ -5845,7 +5915,27 @@ export default function App() {
                 transactions={transactions}
               />
             )}
-            {currentPage === "librarians" && <LibrariansPage />}
+            {currentPage === "librarians" && (
+              canManageLibrarians(librarianRole) ? (
+                <LibrariansPage librarianRole={librarianRole} />
+              ) : (
+                <div className="max-w-md mx-auto mt-16 p-8 bg-white rounded-2xl shadow-sm border border-red-200 text-center space-y-4">
+                  <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+                    <Shield className="w-6 h-6" />
+                  </div>
+                  <h2 className="text-lg font-bold text-gray-900">Access Denied</h2>
+                  <p className="text-sm text-gray-600">
+                    You do not have permission to access the Librarian Management Panel. Administrator privileges are required.
+                  </p>
+                  <button
+                    onClick={() => setCurrentPage("dashboard")}
+                    className="px-4 py-2 bg-[#106A2E] text-white text-xs font-semibold rounded-lg hover:bg-[#0b4f21] transition-colors cursor-pointer"
+                  >
+                    Return to Dashboard
+                  </button>
+                </div>
+              )
+            )}
             {currentPage === "terms" && <TermsPage />}
           </motion.div>
         </AnimatePresence>
