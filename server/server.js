@@ -158,29 +158,34 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// ─── Rate Limiting Middleware ───────────────────────────────────────────────
-function createRateLimiter({ windowMs = 15 * 60 * 1000, max = 100, message = 'Too many requests, please try again later.' }) {
+// ─── Rate Limiting & Brute-Force Protection ─────────────────────────────────
+function getClientIp(req) {
+  const rawForwarded = req.headers['x-forwarded-for'];
+  return (typeof rawForwarded === 'string' ? rawForwarded.split(',')[0].trim() : null) || req.ip || req.socket?.remoteAddress || '127.0.0.1';
+}
+
+function createRateLimiter({ prefix = 'rate', windowMs = 15 * 60 * 1000, max = 100, message = 'Too many requests, please try again later.' }) {
   const requests = new Map();
 
   // Periodic cleanup of expired rate limit records every 5 minutes
   setInterval(() => {
     const now = Date.now();
-    for (const [ip, data] of requests.entries()) {
+    for (const [key, data] of requests.entries()) {
       if (now > data.resetTime) {
-        requests.delete(ip);
+        requests.delete(key);
       }
     }
   }, 5 * 60 * 1000).unref();
 
   return (req, res, next) => {
-    const rawForwarded = req.headers['x-forwarded-for'];
-    const ip = (typeof rawForwarded === 'string' ? rawForwarded.split(',')[0].trim() : null) || req.ip || req.socket?.remoteAddress || '127.0.0.1';
+    const ip = getClientIp(req);
+    const key = `${prefix}:${ip}`;
     const now = Date.now();
 
-    let record = requests.get(ip);
+    let record = requests.get(key);
     if (!record || now > record.resetTime) {
       record = { count: 0, resetTime: now + windowMs };
-      requests.set(ip, record);
+      requests.set(key, record);
     }
 
     record.count++;
@@ -198,18 +203,105 @@ function createRateLimiter({ windowMs = 15 * 60 * 1000, max = 100, message = 'To
   };
 }
 
+// ─── Dedicated Login Rate Limiter (Brute-Force Protection) ─────────────────
+// Specifically tracks consecutive failed login attempts per client IP.
+// Triggers lockout only after 5 failed authentication attempts within 15 minutes.
+const loginFailures = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, data] of loginFailures.entries()) {
+    if (now > data.resetTime) {
+      loginFailures.delete(key);
+    }
+  }
+}, 5 * 60 * 1000).unref();
+
+function recordFailedLogin(req) {
+  const ip = getClientIp(req);
+  const key = `login:${ip}`;
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  let record = loginFailures.get(key);
+  if (!record || now > record.resetTime) {
+    record = { count: 0, resetTime: now + windowMs };
+    loginFailures.set(key, record);
+  }
+  record.count++;
+  return record.count;
+}
+
+function clearFailedLogins(req) {
+  const ip = getClientIp(req);
+  const key = `login:${ip}`;
+  loginFailures.delete(key);
+}
+
+function loginLimiter(req, res, next) {
+  const ip = getClientIp(req);
+  const key = `login:${ip}`;
+  const now = Date.now();
+  const max = 5;
+  const windowMs = 15 * 60 * 1000;
+
+  const record = loginFailures.get(key);
+  if (record && now <= record.resetTime) {
+    if (record.count >= max) {
+      res.setHeader('X-RateLimit-Limit', max);
+      res.setHeader('X-RateLimit-Remaining', 0);
+      res.setHeader('X-RateLimit-Reset', Math.ceil(record.resetTime / 1000));
+      res.setHeader('Retry-After', Math.max(1, Math.ceil((record.resetTime - now) / 1000)));
+
+      logAudit(req, {
+        action: 'LOGIN_LOCKOUT',
+        resource: req.body?.username || req.body?.studentId || ip,
+        status: 'BLOCKED',
+        details: 'Exceeded maximum 5 failed login attempts'
+      });
+      return res.status(429).json({
+        error: 'Too many authentication attempts (maximum 5 attempts per 15 minutes). Please try again after 15 minutes.'
+      });
+    }
+
+    res.setHeader('X-RateLimit-Limit', max);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, max - record.count));
+    res.setHeader('X-RateLimit-Reset', Math.ceil(record.resetTime / 1000));
+  } else {
+    res.setHeader('X-RateLimit-Limit', max);
+    res.setHeader('X-RateLimit-Remaining', max);
+    res.setHeader('X-RateLimit-Reset', Math.ceil((now + windowMs) / 1000));
+  }
+
+  next();
+}
+
+// ─── Dedicated Registration Rate Limiter (Anti-Abuse / Spam Prevention) ─────
+// Completely isolated from login brute-force tracking. Max 20 registrations / 15 mins.
+const registrationLimiter = createRateLimiter({
+  prefix: 'registration',
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: 'Too many registration attempts from this IP. Please try again after 15 minutes.'
+});
+
+// ─── Dedicated Password Reset & OTP Rate Limiter (Anti-Flood Protection) ────
+// Completely isolated from login and registration tracking. Max 10 reset requests / 15 mins.
+const passwordResetLimiter = createRateLimiter({
+  prefix: 'password-reset',
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many password reset requests from this IP. Please try again after 15 minutes.'
+});
+
+// Backward-compatibility alias
+const authLimiter = loginLimiter;
+
 // General API Rate Limiter (Max 10,000 requests per 15 mins per IP to support real-time polling)
 const apiLimiter = createRateLimiter({
+  prefix: 'api',
   windowMs: 15 * 60 * 1000,
   max: 10000,
   message: 'Too many requests from this IP. Please try again after 15 minutes.'
-});
-
-// Strict Auth Rate Limiter (Max 5 attempts per 15 mins per IP to prevent brute-force attacks)
-const authLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: 'Too many authentication attempts (maximum 5 attempts per 15 minutes). Please try again after 15 minutes.'
 });
 
 app.use('/api', apiLimiter);
@@ -358,15 +450,19 @@ function mapReservation(r) {
 }
 
 // ─── Authentication API ──────────────────────────────────────────────────────
-app.post('/api/auth/login', authLimiter, (req, res) => {
+app.post('/api/auth/login', loginLimiter, (req, res) => {
   const { username, password } = req.body;
   try {
     const librarian = db.prepare('SELECT * FROM librarians WHERE username = ?').get(username);
     if (!librarian) {
+      recordFailedLogin(req);
+      logAudit(req, { action: 'LIBRARIAN_LOGIN_FAILED', resource: username, status: 'FAILED', details: 'User not found' });
       return res.status(401).json({ error: 'Invalid username or password.' });
     }
     const isValid = verifyPassword(password, librarian.password);
     if (!isValid) {
+      recordFailedLogin(req);
+      logAudit(req, { action: 'LIBRARIAN_LOGIN_FAILED', resource: username, status: 'FAILED', details: 'Invalid password' });
       return res.status(401).json({ error: 'Invalid username or password.' });
     }
 
@@ -381,6 +477,10 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
       logAudit(req, { action: 'LIBRARIAN_LOGIN_FAILED', resource: username, status: 'BLOCKED', details: 'Account pending approval' });
       return res.status(403).json({ error: 'Your account is pending administrator approval.' });
     }
+
+    // Reset failed login counter on successful authentication
+    clearFailedLogins(req);
+
     const token = signJwt({
       id: librarian.id,
       username: librarian.username,
@@ -407,7 +507,7 @@ app.post('/api/auth/login', authLimiter, (req, res) => {
   }
 });
 
-app.post('/api/auth/register', authLimiter, (req, res) => {
+app.post('/api/auth/register', registrationLimiter, (req, res) => {
   const { firstName, lastName, email, phone, employeeId, role, username, password } = req.body;
   try {
     const hashedPassword = hashPassword(password);
@@ -439,7 +539,7 @@ app.post('/api/auth/register', authLimiter, (req, res) => {
 const otpStore = new Map();
 
 // 1. Send OTP to Email for Password Reset
-app.post('/api/auth/send-otp', authLimiter, (req, res) => {
+app.post('/api/auth/send-otp', passwordResetLimiter, (req, res) => {
   const { email } = req.body;
   if (!email || !email.trim()) {
     return res.status(400).json({ error: 'Please provide a valid email address.' });
@@ -491,7 +591,7 @@ app.post('/api/auth/send-otp', authLimiter, (req, res) => {
 });
 
 // 2. Verify OTP Code
-app.post('/api/auth/verify-otp', authLimiter, (req, res) => {
+app.post('/api/auth/verify-otp', passwordResetLimiter, (req, res) => {
   const { email, otp } = req.body;
   if (!email || !otp) {
     return res.status(400).json({ error: 'Email and OTP verification code are required.' });
@@ -517,7 +617,7 @@ app.post('/api/auth/verify-otp', authLimiter, (req, res) => {
 });
 
 // 3. Reset Password via OTP
-app.post('/api/auth/reset-password-otp', authLimiter, (req, res) => {
+app.post('/api/auth/reset-password-otp', passwordResetLimiter, (req, res) => {
   const { email, otp, newPassword } = req.body;
   if (!email || !otp || !newPassword) {
     return res.status(400).json({ error: 'Email, OTP code, and new password are required.' });
@@ -561,7 +661,7 @@ app.post('/api/auth/reset-password-otp', authLimiter, (req, res) => {
 });
 
 // Legacy Self-service Password Reset via Employee ID
-app.post('/api/auth/reset-password', authLimiter, (req, res) => {
+app.post('/api/auth/reset-password', passwordResetLimiter, (req, res) => {
   const { identifier, employeeId, newPassword } = req.body;
   if (!identifier || !employeeId || !newPassword) {
     return res.status(400).json({ error: 'Please provide your Username/Email, Employee ID, and New Password.' });
@@ -640,7 +740,7 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 });
 
 // ─── Student Authentication API ─────────────────────────────────────────────
-app.post('/api/auth/student-login', authLimiter, (req, res) => {
+app.post('/api/auth/student-login', loginLimiter, (req, res) => {
   const { studentId, email, password } = req.body;
   const lookup = (studentId || email || '').trim();
 
@@ -661,6 +761,7 @@ app.post('/api/auth/student-login', authLimiter, (req, res) => {
     }
 
     if (!student) {
+      recordFailedLogin(req);
       logAudit(req, { action: 'STUDENT_LOGIN_FAILED', resource: lookup, status: 'FAILED', details: 'Student account not found' });
       return res.status(401).json({ error: 'Student account not found. Please register.' });
     }
@@ -668,10 +769,14 @@ app.post('/api/auth/student-login', authLimiter, (req, res) => {
     if (student.password && password) {
       const isValid = verifyPassword(password, student.password);
       if (!isValid) {
+        recordFailedLogin(req);
         logAudit(req, { action: 'STUDENT_LOGIN_FAILED', resource: student.id, status: 'FAILED', details: 'Incorrect password' });
         return res.status(401).json({ error: 'Incorrect password. Please verify your credentials.' });
       }
     }
+
+    // Reset failed login attempts on successful student login
+    clearFailedLogins(req);
 
     const token = signJwt({
       id: student.id,
@@ -701,7 +806,7 @@ app.post('/api/auth/student-login', authLimiter, (req, res) => {
   }
 });
 
-app.post('/api/auth/student-register', authLimiter, (req, res) => {
+app.post('/api/auth/student-register', registrationLimiter, (req, res) => {
   const studentId = req.body.studentId || req.body.student_id;
   const fullName = req.body.fullName || req.body.name || `${req.body.first_name || ''} ${req.body.last_name || ''}`.trim();
   const email = req.body.email;
