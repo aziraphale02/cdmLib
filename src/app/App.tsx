@@ -251,23 +251,86 @@ function Badge({ children, variant = "default" }: { children: React.ReactNode; v
 }
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
-function StatCard({ label, value, icon: Icon, color = "green", sub }: { label: string; value: string | number; icon: React.ElementType; color?: "green" | "yellow" | "red" | "blue"; sub?: string }) {
-  const colors = {
-    green: "border-l-[#106A2E] text-[#106A2E]",
-    yellow: "border-l-amber-500 text-amber-600",
-    red: "border-l-red-500 text-red-600",
-    blue: "border-l-blue-500 text-blue-600",
+function StatCard({ 
+  label, 
+  value, 
+  icon: Icon, 
+  color = "green", 
+  sub,
+  onClick
+}: { 
+  label: string; 
+  value: string | number; 
+  icon: React.ElementType; 
+  color?: "green" | "yellow" | "red" | "blue"; 
+  sub?: string;
+  onClick?: () => void;
+}) {
+  const isRedOverdue = color === "red" && Number(value) > 0;
+
+  const colorStyles = {
+    green: {
+      iconBg: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/60",
+      accent: "bg-emerald-600",
+      badge: null
+    },
+    yellow: {
+      iconBg: "bg-amber-50 text-amber-700 ring-1 ring-amber-200/60",
+      accent: "bg-amber-500",
+      badge: null
+    },
+    red: {
+      iconBg: isRedOverdue 
+        ? "bg-red-100 text-red-700 ring-1 ring-red-300" 
+        : "bg-red-50 text-red-600 ring-1 ring-red-200/60",
+      accent: "bg-red-500",
+      badge: isRedOverdue ? "Action Needed" : null
+    },
+    blue: {
+      iconBg: "bg-blue-50 text-blue-700 ring-1 ring-blue-200/60",
+      accent: "bg-blue-600",
+      badge: null
+    }
   };
 
+  const style = colorStyles[color];
+
   return (
-    <div className={`p-4 rounded-xl border border-border shadow-xs border-l-4 ${colors[color].split(" ")[0]} bg-white text-left`}>
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-muted-foreground font-medium">{label}</p>
-          <p className="text-xl font-bold text-foreground mt-0.5">{value}</p>
-          {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
+    <div 
+      onClick={onClick}
+      className={`p-4 sm:p-5 rounded-xl border bg-white text-left transition-all relative overflow-hidden group ${
+        onClick ? "cursor-pointer hover:shadow-md hover:border-zinc-300 hover:-translate-y-0.5" : "shadow-xs"
+      } ${
+        isRedOverdue 
+          ? "border-red-200 bg-red-50/20 ring-1 ring-red-200" 
+          : "border-zinc-200/80"
+      }`}
+    >
+      {/* Top subtle color indicator line */}
+      <div className={`absolute top-0 left-0 right-0 h-1 ${style.accent}`} />
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-zinc-500 truncate">
+              {label}
+            </p>
+            {style.badge && (
+              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-red-100 text-red-700 border border-red-200 flex-shrink-0">
+                {style.badge}
+              </span>
+            )}
+          </div>
+          <p className="text-2xl sm:text-3xl font-bold text-zinc-900 tracking-tight mt-1.5 leading-none">
+            {value}
+          </p>
+          {sub && (
+            <p className="text-[11px] text-zinc-400 font-medium mt-1.5 truncate">
+              {sub}
+            </p>
+          )}
         </div>
-        <div className={`p-2.5 rounded-lg bg-gray-50 ${colors[color].split(" ")[1]}`}>
+        <div className={`p-2.5 rounded-xl flex-shrink-0 transition-transform group-hover:scale-105 ${style.iconBg}`}>
           <Icon className="w-5 h-5" />
         </div>
       </div>
@@ -1724,135 +1787,257 @@ function DashboardPage({ books, transactions, reservations, librarianName, onNav
   const sortedBooks = [...books].sort((a, b) => b.borrowCount - a.borrowCount).slice(0, 5);
   const overdueTxns = transactions.filter(t => t.status === "overdue");
   const activeTxns = transactions.filter(t => t.status === "active");
+  const maxBorrows = Math.max(1, ...sortedBooks.map(b => b.borrowCount || 0));
 
   return (
     <div className="space-y-6">
-      {/* Hero Banner */}
-      <div className="relative rounded-2xl overflow-hidden shadow-md" style={{ height: 220 }}>
+      {/* Hero Welcome Banner */}
+      <div className="relative rounded-2xl overflow-hidden shadow-sm border border-emerald-950/20" style={{ height: 180 }}>
         <ImageWithFallback
           src="https://images.unsplash.com/photo-1521587760476-6c12a4b040da?w=1920&h=440&fit=crop&auto=format"
           alt="Library of Colegio de Montalban"
           className="w-full h-full object-cover"
         />
-        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, rgba(16,106,46,0.92) 0%, rgba(13,120,86,0.65) 60%, rgba(0,0,0,0.1) 100%)" }} />
-        <div className="absolute inset-0 flex flex-col justify-between p-8">
+        {/* Refined gradient overlay for enhanced readability & visual breathing room */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#072B13]/95 via-[#0B401D]/88 to-[#0E4F24]/65" />
+        <div className="absolute inset-0 flex flex-col justify-between p-6 sm:p-7 z-10">
           <div>
-            <p className="text-[#F4D35E] text-xs font-medium uppercase tracking-widest mb-1">Colegio de Montalban</p>
-            <h1 className="text-white text-3xl font-bold leading-tight" style={{ fontFamily: "var(--font-family-display)" }}>
-              Welcome back,<br />{librarianName}
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 backdrop-blur-xs border border-white/15 mb-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#F4D35E]" />
+              <p className="text-[#F4D35E] text-[10.5px] font-semibold tracking-wider uppercase">Colegio de Montalban · Library Portal</p>
+            </div>
+            <h1 className="text-white text-2xl sm:text-3xl font-bold tracking-tight leading-tight" style={{ fontFamily: "var(--font-family-display)" }}>
+              Welcome back, {librarianName}
             </h1>
-            <p className="text-white/70 text-sm mt-1">{new Date().toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</p>
+            <p className="text-emerald-100/75 text-xs sm:text-sm mt-0.5 font-medium">
+              {new Date().toLocaleDateString("en-PH", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+            </p>
           </div>
-          <div className="flex gap-3">
-            <button onClick={() => onNavigate("borrow")} className="bg-[#F4D35E] text-[#1F1F1F] text-xs font-semibold px-4 py-2 rounded-lg hover:bg-yellow-300 transition-colors flex items-center gap-2 shadow">
-              <BookMarked className="w-3.5 h-3.5" /> New Borrow
+          {/* Action Buttons: Primary (New Borrow) vs Secondary (New Reservation) */}
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => onNavigate("borrow")} 
+              className="bg-[#F4D35E] hover:bg-yellow-400 text-[#1F1F1F] text-xs sm:text-sm font-semibold px-4 py-2 rounded-lg shadow-sm flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+            >
+              <BookMarked className="w-4 h-4 text-[#1F1F1F]" /> 
+              <span>New Borrow</span>
             </button>
-            <button onClick={() => onNavigate("reservations")} className="bg-white/20 backdrop-blur text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-white/30 transition-colors flex items-center gap-2 border border-white/30">
-              <Calendar className="w-3.5 h-3.5" /> New Reservation
+            <button 
+              onClick={() => onNavigate("reservations")} 
+              className="bg-white/15 hover:bg-white/25 text-white border border-white/30 backdrop-blur-xs text-xs sm:text-sm font-medium px-4 py-2 rounded-lg transition-all flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+            >
+              <Calendar className="w-4 h-4 text-white" /> 
+              <span>New Reservation</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard label="Total Books" value={books.reduce((a, b) => a + b.total, 0)} icon={BookOpen} color="green" sub="In collection" />
-        <StatCard label="Currently Borrowed" value={activeTxns.length} icon={BookMarked} color="yellow" sub="Active transactions" />
-        <StatCard label="Overdue Returns" value={overdueTxns.length} icon={AlertTriangle} color="red" sub="Needs attention" />
-        <StatCard label="Reservations" value={reservations.filter(r => r.status === "pending").length} icon={Calendar} color="blue" sub="Pending pickup" />
+      {/* Priority Statistics Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard 
+          label="Total Books" 
+          value={books.reduce((a, b) => a + b.total, 0)} 
+          icon={BookOpen} 
+          color="green" 
+          sub="In physical collection" 
+          onClick={() => onNavigate("catalog")}
+        />
+        <StatCard 
+          label="Currently Borrowed" 
+          value={activeTxns.length} 
+          icon={BookMarked} 
+          color="yellow" 
+          sub="Active transactions" 
+          onClick={() => onNavigate("borrow")}
+        />
+        <StatCard 
+          label="Overdue Returns" 
+          value={overdueTxns.length} 
+          icon={AlertTriangle} 
+          color="red" 
+          sub={overdueTxns.length > 0 ? "Requires attention" : "All loans on schedule"} 
+          onClick={() => onNavigate("returns")}
+        />
+        <StatCard 
+          label="Reservations" 
+          value={reservations.filter(r => r.status === "pending").length} 
+          icon={Calendar} 
+          color="blue" 
+          sub="Pending desk pickup" 
+          onClick={() => onNavigate("reservations")}
+        />
       </div>
 
+      {/* 2-Column Operational Layout */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Most Borrowed Books */}
-        <div className="xl:col-span-2 bg-white rounded-xl shadow-sm border border-border p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-foreground flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[#106A2E]" /> Most Borrowed Books
-            </h2>
-            <button onClick={() => onNavigate("catalog")} className="text-xs text-[#106A2E] hover:underline font-medium flex items-center gap-1">
-              View Catalog <ChevronRight className="w-3.5 h-3.5" />
+        {/* Most Borrowed Books Data Component */}
+        <div className="xl:col-span-2 bg-white rounded-xl shadow-xs border border-zinc-200/90 overflow-hidden flex flex-col">
+          <div className="p-5 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/40">
+            <div>
+              <h2 className="font-bold text-sm sm:text-base text-zinc-900 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-[#106A2E]" /> 
+                <span>Most Borrowed Books</span>
+              </h2>
+              <p className="text-xs text-zinc-500 font-medium mt-0.5">Top circulating titles in the library collection</p>
+            </div>
+            <button 
+              onClick={() => onNavigate("catalog")} 
+              className="text-xs text-[#106A2E] hover:text-[#0D5625] font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+            >
+              <span>View Catalog</span> 
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
-          <div className="space-y-3">
-            {sortedBooks.map((book, i) => (
-              <div key={book.id} className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors group">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0"
-                  style={{ backgroundColor: i === 0 ? "#F4D35E" : i === 1 ? "#e8e8e8" : i === 2 ? "#f0d5c0" : "#f0f0f0", color: i < 3 ? "#1F1F1F" : "#888" }}>
-                  {i + 1}
-                </div>
-                <div className="w-10 h-14 rounded overflow-hidden flex-shrink-0 bg-gray-100">
-                  <ImageWithFallback src={book.cover} alt={book.title} className="w-full h-full object-cover" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm text-foreground truncate">{book.title}</p>
-                  <p className="text-xs text-muted-foreground">{book.author}</p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="font-bold text-sm text-[#106A2E]">{book.borrowCount}</p>
-                  <p className="text-xs text-muted-foreground">borrows</p>
-                </div>
-                <div className="w-24 hidden sm:block">
-                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${(book.borrowCount / 247) * 100}%`, backgroundColor: "#106A2E" }} />
+
+          <div className="divide-y divide-zinc-100 p-2 sm:p-3 flex-1">
+            {sortedBooks.map((book, i) => {
+              const rankStyles = [
+                "bg-amber-100 text-amber-900 border-amber-300 font-bold", // #1 Gold
+                "bg-zinc-100 text-zinc-800 border-zinc-300 font-bold",     // #2 Silver
+                "bg-orange-100 text-orange-900 border-orange-300 font-bold", // #3 Bronze
+                "bg-zinc-50 text-zinc-600 border-zinc-200 font-medium",    // #4
+                "bg-zinc-50 text-zinc-600 border-zinc-200 font-medium",    // #5
+              ];
+              const rankClass = rankStyles[i] || rankStyles[3];
+              const percent = Math.min(100, Math.round((book.borrowCount / maxBorrows) * 100));
+
+              return (
+                <div key={book.id} className="flex items-center gap-3 sm:gap-4 p-3 rounded-lg hover:bg-zinc-50/80 transition-colors group">
+                  {/* Rank Indicator */}
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs flex-shrink-0 border ${rankClass}`}>
+                    {i + 1}
+                  </div>
+
+                  {/* Book Cover Thumbnail */}
+                  <div className="w-10 h-14 rounded-md overflow-hidden flex-shrink-0 bg-zinc-100 border border-zinc-200 shadow-2xs">
+                    <ImageWithFallback src={book.cover} alt={book.title} className="w-full h-full object-cover" />
+                  </div>
+
+                  {/* Title & Metadata */}
+                  <div className="flex-1 min-w-0">
+                    <p 
+                      onClick={() => onNavigate("catalog")}
+                      className="font-semibold text-xs sm:text-sm text-zinc-900 truncate hover:text-[#106A2E] cursor-pointer transition-colors"
+                    >
+                      {book.title}
+                    </p>
+                    <p className="text-xs text-zinc-500 truncate mt-0.5">{book.author}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] font-medium text-zinc-400 bg-zinc-100 px-1.5 py-0.2 rounded">
+                        {book.category.split(" ")[0]}
+                      </span>
+                      <span className="text-[10px] text-zinc-400 hidden sm:inline">
+                        Call: {book.callNo}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Circulation Popularity Bar & Number */}
+                  <div className="text-right flex-shrink-0 pl-2">
+                    <div className="flex items-baseline justify-end gap-1">
+                      <span className="font-bold text-sm text-[#106A2E]">{book.borrowCount}</span>
+                      <span className="text-[11px] text-zinc-400 font-medium">borrows</span>
+                    </div>
+                    <div className="w-20 sm:w-28 mt-1.5 hidden sm:block">
+                      <div className="h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full rounded-full transition-all duration-300" 
+                          style={{ width: `${percent}%`, backgroundColor: i === 0 ? "#F4D35E" : "#106A2E" }} 
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        {/* Right column */}
-        <div className="space-y-4">
-          {/* Daily Quote */}
-          <div className="bg-[#106A2E] rounded-xl p-5 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full -translate-y-8 translate-x-8" />
-            <Quote className="w-5 h-5 text-[#F4D35E] mb-3" />
-            <p className="text-white text-sm italic leading-relaxed mb-3">"{TODAY_QUOTE.text}"</p>
-            <p className="text-[#F4D35E] text-xs font-semibold">— {TODAY_QUOTE.author}</p>
-            <p className="text-white/40 text-xs mt-3">Daily Reading Inspiration</p>
-          </div>
-
-          {/* Overdue Alert */}
-          {overdueTxns.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border border-border p-4">
-              <h3 className="font-semibold text-sm text-foreground flex items-center gap-2 mb-3">
-                <AlertTriangle className="w-4 h-4 text-orange-500" /> Overdue Returns
+        {/* Right Column: Actionable Overdue First, Quick Actions, Subordinated Quote */}
+        <div className="space-y-5 flex flex-col">
+          {/* Actionable Overdue Returns Panel */}
+          <div className="bg-white rounded-xl shadow-xs border border-zinc-200/90 p-4 sm:p-5">
+            <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-zinc-100">
+              <h3 className="font-bold text-sm text-zinc-900 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-600" /> 
+                <span>Overdue Returns</span>
               </h3>
-              <div className="space-y-2">
-                {overdueTxns.map(t => (
-                  <div key={t.id} className="p-2.5 bg-red-50 rounded-lg border border-red-100">
-                    <p className="text-xs font-medium text-red-800">{t.studentName}</p>
-                    <p className="text-xs text-red-600">{t.bookTitle}</p>
-                    <p className="text-xs text-red-500 mt-0.5">Due: {formatDate(t.dueDate)}</p>
+              {overdueTxns.length > 0 ? (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
+                  {overdueTxns.length} need attention
+                </span>
+              ) : (
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                  All Clear
+                </span>
+              )}
+            </div>
+
+            {overdueTxns.length > 0 ? (
+              <div className="space-y-2.5">
+                {overdueTxns.slice(0, 4).map(t => (
+                  <div key={t.id} className="p-3 bg-red-50/50 rounded-lg border border-red-100/90 hover:bg-red-50 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-bold text-zinc-900 truncate">{t.studentName}</p>
+                      <span className="text-[10px] font-bold text-red-600 bg-red-100/70 px-1.5 py-0.2 rounded flex-shrink-0">
+                        Overdue
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-700 font-medium truncate mt-0.5">{t.bookTitle}</p>
+                    <p className="text-[11px] text-red-600 font-medium mt-1 flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> Due: {formatDate(t.dueDate)}
+                    </p>
                   </div>
                 ))}
+                <button 
+                  onClick={() => onNavigate("returns")} 
+                  className="mt-2 w-full text-xs font-semibold text-[#106A2E] hover:text-[#0D5625] hover:bg-emerald-50 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 border border-emerald-200/60 cursor-pointer"
+                >
+                  <span>Process Returns ({overdueTxns.length})</span> 
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <button onClick={() => onNavigate("returns")} className="mt-3 w-full text-xs text-[#106A2E] hover:underline font-medium flex items-center justify-center gap-1">
-                Process Returns <ChevronRight className="w-3 h-3" />
-              </button>
-            </div>
-          )}
+            ) : (
+              <div className="p-4 text-center text-zinc-500 bg-emerald-50/30 rounded-lg border border-emerald-100/60">
+                <CheckCircle className="w-6 h-6 text-emerald-600 mx-auto mb-1.5 opacity-90" />
+                <p className="text-xs font-medium text-emerald-800">All borrowings are on schedule.</p>
+                <p className="text-[11px] text-zinc-400 mt-0.5">No overdue books currently recorded.</p>
+              </div>
+            )}
+          </div>
 
-          {/* Quick Links */}
-          <div className="bg-white rounded-xl shadow-sm border border-border p-4">
-            <h3 className="font-semibold text-sm text-foreground mb-3">Quick Actions</h3>
-            <div className="space-y-2">
+          {/* Quick Actions Panel */}
+          <div className="bg-white rounded-xl shadow-xs border border-zinc-200/90 p-4 sm:p-5">
+            <h3 className="font-bold text-xs uppercase tracking-wider text-zinc-500 mb-3">Quick Actions</h3>
+            <div className="space-y-1.5">
               {[
-                { label: "Borrow a Book", page: "borrow" as Page, icon: BookMarked, color: "#106A2E" },
-                { label: "Make Reservation", page: "reservations" as Page, icon: Calendar, color: "#0D7856" },
-                { label: "Process Return", page: "returns" as Page, icon: RotateCcw, color: "#c0392b" },
-                { label: "View Catalog", page: "catalog" as Page, icon: BookOpen, color: "#1F1F1F" },
+                { label: "Borrow Books", page: "borrow" as Page, icon: BookMarked, color: "#106A2E" },
+                { label: "Return Books", page: "returns" as Page, icon: RotateCcw, color: "#c0392b" },
+                { label: "Reservations", page: "reservations" as Page, icon: Calendar, color: "#0D7856" },
+                { label: "Book Catalog", page: "catalog" as Page, icon: BookOpen, color: "#374151" },
               ].map(({ label, page, icon: Icon, color }) => (
-                <button key={page} onClick={() => onNavigate(page)}
-                  className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 transition-colors text-left group">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: color + "15" }}>
+                <button 
+                  key={page} 
+                  onClick={() => onNavigate(page)}
+                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-50 transition-colors text-left group cursor-pointer"
+                >
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: color + "15" }}>
                     <Icon className="w-3.5 h-3.5" style={{ color }} />
                   </div>
-                  <span className="text-sm font-medium text-foreground">{label}</span>
-                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <span className="text-xs font-semibold text-zinc-800 group-hover:text-[#106A2E] transition-colors">{label}</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-zinc-400 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Subordinated Daily Reading Inspiration Widget */}
+          <div className="bg-zinc-50/80 rounded-xl p-4 border border-zinc-200/80 shadow-2xs relative overflow-hidden">
+            <Quote className="w-4 h-4 text-amber-500 mb-2" />
+            <p className="text-zinc-700 text-xs italic leading-relaxed">"{TODAY_QUOTE.text}"</p>
+            <p className="text-zinc-900 text-xs font-semibold mt-2">— {TODAY_QUOTE.author}</p>
+            <p className="text-zinc-400 text-[10px] font-semibold uppercase tracking-wider mt-1.5">Daily Reading Inspiration</p>
           </div>
         </div>
       </div>
@@ -4259,69 +4444,213 @@ function UserProfileModal({
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-function Sidebar({ currentPage, onNavigate, librarianName, librarianRole, onLogout, collapsed, onToggle, onOpenProfile }: {
-  currentPage: Page; onNavigate: (p: Page) => void; librarianName: string; librarianRole: string; onLogout: () => void; collapsed: boolean; onToggle: () => void; onOpenProfile?: () => void;
+interface NavItem {
+  id: Page;
+  label: string;
+  icon: React.ElementType;
+}
+
+interface NavSection {
+  title: string;
+  items: NavItem[];
+}
+
+function Sidebar({ currentPage, onNavigate, librarianName, librarianRole, onLogout, collapsed, onToggle, onOpenProfile, mobileOpen, onCloseMobile }: {
+  currentPage: Page; 
+  onNavigate: (p: Page) => void; 
+  librarianName: string; 
+  librarianRole: string; 
+  onLogout: () => void; 
+  collapsed: boolean; 
+  onToggle: () => void; 
+  onOpenProfile?: () => void;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }) {
   const isManager = canManageLibrarians(librarianRole);
-  const navItems = [
-    { id: "dashboard" as Page, label: "Dashboard", icon: LayoutDashboard },
-    { id: "catalog" as Page, label: "Book Catalog", icon: BookOpen },
-    { id: "students" as Page, label: "Student Directory", icon: Users },
-    { id: "borrow" as Page, label: "Borrow Book", icon: BookMarked },
-    { id: "reservations" as Page, label: "Reservations", icon: Calendar },
-    { id: "returns" as Page, label: "Return Books", icon: RotateCcw },
-    { id: "reports" as Page, label: "Reports & Logs", icon: FileText },
-    ...(isManager ? [{ id: "librarians" as Page, label: "Librarian Panel", icon: Shield }] : []),
-    { id: "terms" as Page, label: "Terms & Conditions", icon: Info },
+
+  const navSections: NavSection[] = [
+    {
+      title: "OVERVIEW",
+      items: [
+        { id: "dashboard", label: "Dashboard", icon: LayoutDashboard }
+      ]
+    },
+    {
+      title: "CIRCULATION",
+      items: [
+        { id: "borrow", label: "Borrow Books", icon: BookMarked },
+        { id: "returns", label: "Return Books", icon: RotateCcw },
+        { id: "reservations", label: "Reservations", icon: Calendar }
+      ]
+    },
+    {
+      title: "LIBRARY",
+      items: [
+        { id: "catalog", label: "Book Catalog", icon: BookOpen },
+        { id: "students", label: "Student Directory", icon: Users }
+      ]
+    },
+    {
+      title: "ADMINISTRATION",
+      items: [
+        { id: "reports", label: "Reports & Logs", icon: FileText },
+        ...(isManager ? [{ id: "librarians" as Page, label: "Librarian Panel", icon: Shield }] : []),
+        { id: "terms", label: "Terms & Conditions", icon: Info }
+      ]
+    }
   ];
 
   return (
-    <div className={`flex flex-col h-screen bg-[#106A2E] transition-all duration-300 ${collapsed ? "w-16" : "w-60"} flex-shrink-0 shadow-xl`}>
-      {/* Header */}
-      <div className="p-4 border-b border-white/15 flex items-center justify-between">
-        {!collapsed && (
-          <div className="flex items-center gap-2.5">
-            <div className="bg-[#F4D35E] rounded-xl p-1.5 flex-shrink-0">
+    <>
+      {/* Mobile Backdrop Overlay */}
+      {mobileOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-xs transition-opacity animate-in fade-in" 
+          onClick={onCloseMobile} 
+          aria-hidden="true"
+        />
+      )}
+
+      <aside 
+        className={`fixed md:relative inset-y-0 left-0 z-50 flex flex-col h-screen transition-all duration-300 flex-shrink-0 shadow-2xl md:shadow-lg border-r border-white/10 ${
+          collapsed ? "w-20" : "w-64"
+        } ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        }`}
+        style={{ 
+          background: "linear-gradient(180deg, #093717 0%, #0D4922 45%, #083416 100%)" 
+        }}
+        aria-label="Sidebar Navigation"
+      >
+        {/* Brand Header */}
+        <div className="p-4 border-b border-white/10 flex items-center justify-between flex-shrink-0">
+          {!collapsed ? (
+            <div className="flex items-center gap-3">
+              <div className="bg-[#F4D35E] rounded-xl p-2 flex-shrink-0 shadow-sm ring-2 ring-white/10">
+                <Library className="w-5 h-5 text-[#1F1F1F]" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-white font-bold text-sm leading-tight tracking-tight">CDM Library</p>
+                <p className="text-emerald-200/60 text-[11px] font-medium leading-none mt-1">Management System</p>
+              </div>
+            </div>
+          ) : (
+            <div className="mx-auto bg-[#F4D35E] rounded-xl p-2 shadow-sm ring-2 ring-white/10">
               <Library className="w-5 h-5 text-[#1F1F1F]" />
             </div>
-            <div>
-              <p className="text-white font-bold text-sm leading-none">CDM Library</p>
-              <p className="text-white/50 text-xs mt-0.5">Management System</p>
-            </div>
+          )}
+
+          {/* Desktop Collapse / Mobile Close */}
+          <div className="flex items-center">
+            {/* Desktop collapse toggle */}
+            <button 
+              type="button"
+              onClick={onToggle} 
+              className="hidden md:flex text-emerald-200/70 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-colors cursor-pointer"
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
+            {/* Mobile close button */}
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              className="md:hidden text-emerald-200/70 hover:text-white hover:bg-white/10 p-1.5 rounded-lg transition-colors cursor-pointer"
+              title="Close navigation"
+              aria-label="Close navigation"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-        )}
-        {collapsed && <div className="bg-[#F4D35E] rounded-xl p-1.5 mx-auto"><Library className="w-5 h-5 text-[#1F1F1F]" /></div>}
-        <button onClick={onToggle} className="text-white/60 hover:text-white transition-colors ml-auto p-1 rounded">
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </button>
-      </div>
-
-      {/* Nav */}
-      <nav className="flex-1 py-4 overflow-y-auto">
-        <div className="space-y-0.5 px-2">
-          {navItems.map(({ id, label, icon: Icon }) => {
-            const isActive = currentPage === id;
-            return (
-              <button key={id} onClick={() => onNavigate(id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left group
-                  ${isActive ? "bg-[#F4D35E] text-[#1F1F1F]" : "text-white/70 hover:bg-white/10 hover:text-white"}`}>
-                <Icon className={`w-4 h-4 flex-shrink-0 ${isActive ? "text-[#1F1F1F]" : ""}`} />
-                {!collapsed && <span className="text-sm font-medium truncate">{label}</span>}
-                {isActive && !collapsed && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-[#1F1F1F]/30" />}
-              </button>
-            );
-          })}
         </div>
-      </nav>
 
-      {/* Footer */}
-      <div className="p-3 border-t border-white/15">
-        <button onClick={onLogout} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-white/70 hover:bg-white/10 hover:text-white transition-colors cursor-pointer">
-          <LogOut className="w-4 h-4 flex-shrink-0" />
-          {!collapsed && <span className="text-xs font-medium">Sign Out</span>}
-        </button>
-      </div>
-    </div>
+        {/* Structured Navigation with Categorized Sections */}
+        <nav className="flex-1 py-3 px-2.5 overflow-y-auto space-y-4 select-none">
+          {navSections.map((section, sIdx) => (
+            <div key={section.title} className={sIdx > 0 ? "pt-1" : ""}>
+              {!collapsed ? (
+                <div className="px-3 pb-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-200/40 select-none">
+                    {section.title}
+                  </span>
+                </div>
+              ) : (
+                sIdx > 0 && <div className="my-2 border-t border-white/10 mx-2" />
+              )}
+
+              <div className="space-y-1">
+                {section.items.map(({ id, label, icon: Icon }) => {
+                  const isActive = currentPage === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => {
+                        onNavigate(id);
+                        if (onCloseMobile) onCloseMobile();
+                      }}
+                      title={collapsed ? label : undefined}
+                      className={`w-full flex items-center transition-all duration-150 text-left cursor-pointer group relative ${
+                        collapsed
+                          ? "justify-center h-10 w-10 mx-auto rounded-lg"
+                          : "gap-3 px-3 py-2 rounded-lg"
+                      } ${
+                        isActive
+                          ? "bg-[#F4D35E]/15 text-white font-semibold shadow-2xs ring-1 ring-[#F4D35E]/30"
+                          : "text-emerald-100/75 hover:bg-white/[0.08] hover:text-white font-medium"
+                      }`}
+                    >
+                      {/* Active Indicator Bar on Left Edge */}
+                      {isActive && !collapsed && (
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-4 rounded-r-full bg-[#F4D35E]" />
+                      )}
+
+                      <Icon
+                        className={`w-[18px] h-[18px] flex-shrink-0 transition-colors ${
+                          isActive
+                            ? "text-[#F4D35E]"
+                            : "text-emerald-200/70 group-hover:text-white"
+                        }`}
+                      />
+
+                      {!collapsed && (
+                        <span className="text-xs sm:text-[13px] tracking-tight truncate flex-1">
+                          {label}
+                        </span>
+                      )}
+
+                      {/* Subtle Active Accent Pip */}
+                      {isActive && !collapsed && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#F4D35E] opacity-75" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* Footer with Sign Out */}
+        <div className="p-3 border-t border-white/10 mt-auto flex-shrink-0">
+          <button
+            type="button"
+            onClick={onLogout}
+            title={collapsed ? "Sign Out" : undefined}
+            className={`w-full flex items-center transition-colors cursor-pointer rounded-lg border border-transparent ${
+              collapsed
+                ? "justify-center h-10 w-10 mx-auto text-emerald-200/70 hover:bg-red-500/20 hover:text-red-200"
+                : "gap-2.5 px-3 py-2 text-emerald-200/70 hover:bg-red-500/15 hover:text-red-200 hover:border-red-500/25"
+            }`}
+          >
+            <LogOut className="w-4 h-4 flex-shrink-0" />
+            {!collapsed && <span className="text-xs font-semibold">Sign Out</span>}
+          </button>
+        </div>
+      </aside>
+    </>
   );
 }
 
@@ -4342,6 +4671,7 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
   onNavigate: (p: Page) => void; onLogout: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -4410,7 +4740,7 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
 
   const titles: Record<Page, string> = {
     login: "Login", register: "Register", dashboard: "Dashboard", catalog: "Book Catalog",
-    students: "Student Directory", borrow: "Borrow Book", reservations: "Reservations", returns: "Return Books", terms: "Terms & Conditions",
+    students: "Student Directory", borrow: "Borrow Books", reservations: "Reservations", returns: "Return Books", terms: "Terms & Conditions",
     reports: "Reports & Logs", librarians: "Librarian Panel"
   };
 
@@ -4437,7 +4767,7 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
   }
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ fontFamily: "var(--font-family-sans)" }}>
+    <div className="flex h-screen overflow-hidden bg-zinc-50/50" style={{ fontFamily: "var(--font-family-sans)" }}>
       {showProfile && (
         <UserProfileModal
           librarianName={librarianName}
@@ -4455,23 +4785,46 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
         collapsed={collapsed} 
         onToggle={() => setCollapsed(c => !c)} 
         onOpenProfile={() => setShowProfile(true)}
+        mobileOpen={mobileNavOpen}
+        onCloseMobile={() => setMobileNavOpen(false)}
       />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top Header */}
-        <header className="bg-white border-b border-border px-6 py-3 flex items-center justify-between flex-shrink-0 shadow-sm">
-          <div>
-            <h1 className="font-bold text-foreground text-base">{titles[currentPage]}</h1>
-            <p className="text-xs text-muted-foreground">Colegio de Montalban · Library System</p>
-          </div>
+        <header className="bg-white border-b border-zinc-200/80 px-4 sm:px-6 py-2.5 flex items-center justify-between flex-shrink-0 shadow-2xs z-30">
           <div className="flex items-center gap-3">
+            {/* Mobile Navigation Toggle */}
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(true)}
+              className="md:hidden p-2 -ml-1 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
+              title="Open Navigation"
+              aria-label="Open Navigation"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div>
+              <h1 className="font-bold text-zinc-900 text-base sm:text-lg leading-tight tracking-tight">
+                {titles[currentPage]}
+              </h1>
+              <p className="text-[11px] sm:text-xs text-zinc-500 font-medium">
+                Colegio de Montalban · Library System
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Notifications Menu */}
             <div className="relative">
               <button 
+                type="button"
                 onClick={() => setShowNotifications(!showNotifications)}
-                className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-gray-100 rounded-lg transition-colors focus:outline-none cursor-pointer"
+                className="relative p-2 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors focus:outline-none cursor-pointer"
+                title="View notifications"
+                aria-label="View notifications"
               >
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold border border-white">
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold ring-2 ring-white">
                     {unreadCount}
                   </span>
                 )}
@@ -4480,17 +4833,17 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
               {showNotifications && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
-                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl border border-border shadow-lg z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                    <div className="p-3 border-b border-border flex items-center justify-between bg-gray-50">
+                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl border border-zinc-200 shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="p-3 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/70">
                       <div className="flex items-center gap-1.5">
                         <Bell className="w-4 h-4 text-[#106A2E]" />
-                        <span className="font-semibold text-sm text-foreground">Notifications</span>
+                        <span className="font-semibold text-xs text-zinc-900">Notifications</span>
                       </div>
                       <div className="flex gap-2">
                         {unreadCount > 0 && (
                           <button 
                             onClick={handleMarkAllAsRead} 
-                            className="text-xs text-[#106A2E] hover:underline font-medium focus:outline-none cursor-pointer"
+                            className="text-[11px] text-[#106A2E] hover:underline font-medium focus:outline-none cursor-pointer"
                           >
                             Mark all read
                           </button>
@@ -4498,16 +4851,16 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
                         {notifications.length > 0 && (
                           <button 
                             onClick={handleClearAll} 
-                            className="text-xs text-red-600 hover:underline font-medium focus:outline-none cursor-pointer"
+                            className="text-[11px] text-red-600 hover:underline font-medium focus:outline-none cursor-pointer"
                           >
                             Clear all
                           </button>
                         )}
                       </div>
                     </div>
-                    <div className="max-h-80 overflow-y-auto divide-y divide-border">
+                    <div className="max-h-80 overflow-y-auto divide-y divide-zinc-100">
                       {notifications.length === 0 ? (
-                        <div className="p-8 text-center text-muted-foreground">
+                        <div className="p-8 text-center text-zinc-400">
                           <Bell className="w-8 h-8 mx-auto mb-2 opacity-35" />
                           <p className="text-xs">No notifications yet.</p>
                         </div>
@@ -4528,24 +4881,24 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
                             <div 
                               key={notif.id} 
                               onClick={() => handleNotificationClick(notif)}
-                              className={`p-3 flex gap-3 text-left transition-colors cursor-pointer hover:bg-gray-50 relative ${!notif.read ? "bg-emerald-50/25" : ""}`}
+                              className={`p-3 flex gap-3 text-left transition-colors cursor-pointer hover:bg-zinc-50 relative ${!notif.read ? "bg-emerald-50/25" : ""}`}
                             >
                               <div className={`w-8 h-8 rounded-full border flex items-center justify-center flex-shrink-0 ${iconColors[notif.type]}`}>
                                 <TypeIcon className="w-4 h-4" />
                               </div>
                               <div className="flex-1 min-w-0 pr-4">
-                                <p className="font-semibold text-xs text-foreground flex items-center gap-1.5">
+                                <p className="font-semibold text-xs text-zinc-900 flex items-center gap-1.5">
                                   {notif.title}
                                   {!notif.read && (
                                     <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
                                   )}
                                 </p>
-                                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed break-words">{notif.message}</p>
-                                <p className="text-[10px] text-muted-foreground/75 mt-1">{notif.time}</p>
+                                <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed break-words">{notif.message}</p>
+                                <p className="text-[10px] text-zinc-400 mt-1">{notif.time}</p>
                               </div>
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleRemoveNotification(notif.id); }}
-                                className="absolute top-2.5 right-2.5 text-muted-foreground/50 hover:text-foreground p-0.5 rounded-full hover:bg-gray-100 transition-colors"
+                                className="absolute top-2.5 right-2.5 text-zinc-400 hover:text-zinc-700 p-0.5 rounded-full hover:bg-zinc-100 transition-colors"
                               >
                                 <X className="w-3.5 h-3.5" />
                               </button>
@@ -4558,24 +4911,37 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
                 </>
               )}
             </div>
+
+            {/* Header Separator */}
+            <div className="h-6 w-px bg-zinc-200" />
+
+            {/* User Profile Button */}
             <button 
               type="button"
               onClick={() => setShowProfile(true)}
-              className="flex items-center gap-2.5 pl-3 border-l border-border hover:opacity-80 transition-opacity text-left cursor-pointer group"
-              title="Click to view Profile & Change Password"
+              className="flex items-center gap-2.5 pl-1 py-1 hover:opacity-90 transition-all text-left cursor-pointer group rounded-lg"
+              title="Click to view Profile & Security Settings"
             >
-              <div className="w-8 h-8 rounded-full bg-[#106A2E] flex items-center justify-center group-hover:ring-2 group-hover:ring-[#106A2E]/30 transition-all">
+              <div className="w-8 h-8 rounded-full bg-[#106A2E] flex items-center justify-center group-hover:ring-2 group-hover:ring-[#106A2E]/30 transition-all shadow-2xs">
                 <User className="w-4 h-4 text-white" />
               </div>
               <div className="hidden sm:block">
-                <p className="text-xs font-semibold text-foreground group-hover:text-[#106A2E] transition-colors">{librarianName}</p>
-                <p className="text-xs text-muted-foreground">{librarianRole || "Staff Librarian"}</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-xs font-semibold text-zinc-800 group-hover:text-[#106A2E] transition-colors leading-tight">
+                    {librarianName}
+                  </p>
+                  <ChevronDown className="w-3 h-3 text-zinc-400 group-hover:text-zinc-600 transition-colors" />
+                </div>
+                <p className="text-[11px] text-zinc-400 font-medium leading-none mt-0.5">
+                  {librarianRole || "Staff Librarian"}
+                </p>
               </div>
             </button>
           </div>
         </header>
+
         {/* Content */}
-        <main className="flex-1 overflow-y-auto bg-zinc-50/50 p-6">
+        <main className="flex-1 overflow-y-auto bg-zinc-50/50 p-4 sm:p-6">
           {children}
         </main>
       </div>
