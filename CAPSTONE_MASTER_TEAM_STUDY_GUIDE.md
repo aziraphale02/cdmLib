@@ -150,7 +150,7 @@ The system maps directly to the official academic structure of **Colegio de Mont
 * **Stateless JWT Authorization:** Secured endpoints require an HMAC-SHA256 JSON Web Token signed with server secrets and a 24-hour expiration.
 * **Audit Trail (`audit_logs` table):** All critical events (logins, registrations, book deletions, replacement approvals) are logged with IP address, user role, timestamp, and result.
 * **OWASP Security Headers:** Configured HTTP headers including `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 1; mode=block`, and removal of `X-Powered-By`.
-* **Rate Limiting:** Protects `/api/auth/*` from brute-force dictionary attacks (maximum 15 attempts per 15 minutes per IP).
+* **Rate Limiting:** Protects `/api/auth/*` from brute-force dictionary attacks (maximum 5 attempts per 15 minutes per IP).
 
 ### ⚡ Concurrency & High-Throughput Database Tuning
 * **SQLite WAL (Write-Ahead Logging):** `PRAGMA journal_mode = WAL` enables simultaneous reading and writing without database locks.

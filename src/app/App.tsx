@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import QRCode from "qrcode";
 import { ImageWithFallback } from "@/app/components/figma/ImageWithFallback";
 import libraryBrandImg from "@/imports/672249359_1247900927325779_3798022234977448862_n.jpg";
@@ -6,10 +6,11 @@ import {
   BookOpen, LayoutDashboard, Calendar, RotateCcw, FileText, LogOut,
   Search, QrCode, Bell, User, AlertTriangle, CheckCircle, Clock,
   TrendingUp, Users, BookMarked, Eye, EyeOff, Shield, Star, Printer, X, Plus,
-  ArrowRight, Info, Hash, Check, ChevronRight, Quote, GraduationCap,
+  ArrowRight, ArrowLeft, Info, Hash, Check, ChevronRight, Quote, GraduationCap,
   ChevronLeft, AlertCircle, Menu, BookX, Library, Filter, Loader2,
-  Edit, Trash, Tag, SlidersHorizontal, Layers, Copy, CheckCircle2, Smartphone,
-  KeyRound, Lock, ShieldCheck, Mail, Phone, BadgeCheck
+  Edit, Trash, Trash2, Tag, SlidersHorizontal, Layers, Copy, CheckCircle2, Smartphone,
+  KeyRound, Lock, ShieldCheck, Mail, Phone, BadgeCheck, LayoutGrid, List,
+  MoreVertical, ArrowUpDown, ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -234,32 +235,29 @@ function Badge({ children, variant = "default" }: { children: React.ReactNode; v
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 function StatCard({ label, value, icon: Icon, color = "green", sub }: { label: string; value: string | number; icon: React.ElementType; color?: "green" | "yellow" | "red" | "blue"; sub?: string }) {
   const colors = {
-    green: "border-l-[#106A2E] bg-white",
-    yellow: "border-l-[#F4D35E] bg-white",
-    red: "border-l-red-500 bg-white",
-    blue: "border-l-blue-500 bg-white",
+    green: "border-l-[#106A2E] text-[#106A2E]",
+    yellow: "border-l-amber-500 text-amber-600",
+    red: "border-l-red-500 text-red-600",
+    blue: "border-l-blue-500 text-blue-600",
   };
-  const iconColors = {
-    green: "bg-[#106A2E]/10 text-[#106A2E]",
-    yellow: "bg-[#F4D35E]/20 text-[#7a6500]",
-    red: "bg-red-50 text-red-600",
-    blue: "bg-blue-50 text-blue-600",
-  };
+
   return (
-    <div className={`rounded-lg border-l-4 p-4 shadow-sm ${colors[color]} flex items-center gap-4`}>
-      <div className={`p-3 rounded-lg ${iconColors[color]}`}>
-        <Icon className="w-5 h-5" />
-      </div>
-      <div>
-        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{label}</p>
-        <p className="text-2xl font-bold text-foreground font-display">{value}</p>
-        {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+    <div className={`p-4 rounded-xl border border-border shadow-xs border-l-4 ${colors[color].split(" ")[0]} bg-white text-left`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-muted-foreground font-medium">{label}</p>
+          <p className="text-xl font-bold text-foreground mt-0.5">{value}</p>
+          {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
+        </div>
+        <div className={`p-2.5 rounded-lg bg-gray-50 ${colors[color].split(" ")[1]}`}>
+          <Icon className="w-5 h-5" />
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Book Card ────────────────────────────────────────────────────────────────
+// ─── Book Card (Linear / Shadcn Aesthetic) ──────────────────────────────────
 function BookCard({ book, onPreview, onBorrow, onEdit, onDelete }: {
   book: Book;
   onPreview: (b: Book) => void;
@@ -267,91 +265,155 @@ function BookCard({ book, onPreview, onBorrow, onEdit, onDelete }: {
   onEdit: (b: Book) => void;
   onDelete: (b: Book) => void;
 }) {
-  const instObj = INSTITUTES.find(i => i.code === book.institute);
+  const [showMenu, setShowMenu] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const isAvailable = book.available > 0;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-border hover:shadow-md transition-shadow group overflow-hidden flex flex-col justify-between">
+    <div className="bg-white rounded-xl border border-zinc-200/90 shadow-xs hover:shadow-md transition-all duration-200 group flex flex-col justify-between overflow-hidden relative text-left">
       <div>
-        <div className="relative h-44 overflow-hidden bg-gray-100">
-          <ImageWithFallback
-            src={book.cover}
-            alt={book.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
-          <div className="absolute top-2 right-2">
-            {book.available > 0
-              ? <Badge variant="success"><Check className="w-2.5 h-2.5" /> {book.available} Available</Badge>
-              : <Badge variant="danger"><X className="w-2.5 h-2.5" /> Unavailable</Badge>}
-          </div>
-          <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
-            {book.institute ? (
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase shadow-sm ${instObj?.badgeBg || "bg-gray-100"} ${instObj?.badgeText || "text-gray-800"}`}>
-                {book.institute}
-              </span>
-            ) : (
-              <Badge variant="default">{book.category}</Badge>
-            )}
-            {book.yearLevel && (
-              <span className="px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-xs text-white text-[9px] font-medium">
-                {book.yearLevel} {book.semester ? `· ${book.semester}` : ""}
-              </span>
-            )}
-          </div>
-          <div className="absolute bottom-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => { e.stopPropagation(); onEdit(book); }}
-              className="p-1.5 bg-white hover:bg-gray-100 text-gray-700 rounded-md shadow-sm transition-colors border border-gray-200 cursor-pointer"
-              title="Edit Book"
-            >
-              <Edit className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(book); }}
-              className="p-1.5 bg-white hover:bg-red-50 text-red-600 rounded-md shadow-sm transition-colors border border-gray-200 cursor-pointer"
-              title="Delete Book"
-            >
-              <Trash className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-        <div className="p-4">
-          {book.callNo && (
-            <div className="flex items-center gap-1 text-[11px] font-mono text-[#106A2E] bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 mb-2 w-fit">
-              <Tag className="w-2.5 h-2.5" /> {book.callNo}
+        {/* Cover Container (3:4 aspect ratio) */}
+        <div className="relative aspect-[3/4] w-full bg-slate-900 overflow-hidden group">
+          {book.cover && !imageError ? (
+            <div className="relative w-full h-full">
+              <img
+                src={book.cover}
+                alt={book.title}
+                onError={() => setImageError(true)}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 ease-out"
+              />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/20" />
+            </div>
+          ) : (
+            /* Clean Typographic Spine Fallback Cover */
+            <div className="w-full h-full bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 p-4 flex flex-col justify-between relative overflow-hidden select-none">
+              <div className="absolute -right-4 -bottom-4 text-emerald-500/10 font-black text-6xl font-mono pointer-events-none uppercase">
+                {book.institute || "CDM"}
+              </div>
+              <div className="flex items-center justify-between z-10">
+                <span className="text-[10px] font-mono tracking-wider text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-950/90 border border-emerald-500/30">
+                  {book.institute || "CDM"}
+                </span>
+                <span className="text-[10px] font-mono text-zinc-400">
+                  {book.publishYear || "2024"}
+                </span>
+              </div>
+              <div className="z-10 my-auto py-2">
+                <p className="text-white font-serif font-bold text-sm leading-snug line-clamp-3 tracking-tight">
+                  {book.title}
+                </p>
+                <p className="text-emerald-200/80 text-[11px] font-sans mt-1.5 line-clamp-1 font-medium">
+                  {book.author}
+                </p>
+              </div>
+              <div className="pt-2 border-t border-emerald-500/20 flex items-center justify-between z-10 text-[10px] text-zinc-400 font-mono">
+                <span>CDM LIBRARY</span>
+                <span>{book.callNo || "REF-001"}</span>
+              </div>
             </div>
           )}
-          <h3 className="font-semibold text-sm text-foreground line-clamp-2 leading-snug mb-1">{book.title}</h3>
-          <p className="text-xs text-muted-foreground mb-2">{book.author} · {book.publishYear}</p>
-          <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-            <div className="flex items-center gap-1">
-              <Star className="w-3 h-3 fill-[#F4D35E] text-[#F4D35E]" />
-              <span>{book.borrowCount} borrows</span>
-            </div>
-            {book.marcTags && book.marcTags.length > 0 && (
-              <span className="text-[10px] font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                MARC 21
+
+          {/* Consolidated Single Status Indicator Badge */}
+          <div className="absolute top-2.5 left-2.5 z-10">
+            {isAvailable ? (
+              <span className="bg-emerald-900/90 backdrop-blur-md text-emerald-200 border border-emerald-400/30 text-[10px] font-semibold px-2.5 py-1 rounded-md shadow-xs flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                Available ({book.available}/{book.total})
+              </span>
+            ) : (
+              <span className="bg-zinc-900/90 backdrop-blur-md text-zinc-300 border border-zinc-700/50 text-[10px] font-semibold px-2.5 py-1 rounded-md shadow-xs flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
+                Out of Stock (0/{book.total})
               </span>
             )}
+          </div>
+
+          {/* Discreet 3-Dot Action Menu */}
+          <div className="absolute top-2.5 right-2.5 z-20">
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+                className="w-7 h-7 bg-slate-900/80 hover:bg-slate-900 text-white rounded-lg backdrop-blur-xs flex items-center justify-center transition-colors cursor-pointer border border-white/10"
+                title="More Options"
+              >
+                <MoreVertical className="w-3.5 h-3.5" />
+              </button>
+              {showMenu && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={(e) => { e.stopPropagation(); setShowMenu(false); }} />
+                  <div className="absolute right-0 mt-1 w-36 bg-white rounded-xl border border-zinc-200 shadow-lg z-30 overflow-hidden text-xs py-1 animate-in fade-in duration-150">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setShowMenu(false); onEdit(book); }}
+                      className="w-full px-3 py-2 text-left text-zinc-700 hover:bg-zinc-100 flex items-center gap-2 font-medium cursor-pointer"
+                    >
+                      <Edit className="w-3.5 h-3.5 text-zinc-500" /> Edit Record
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setShowMenu(false); onDelete(book); }}
+                      className="w-full px-3 py-2 text-left text-red-600 hover:bg-red-50 flex items-center gap-2 font-medium cursor-pointer"
+                    >
+                      <Trash className="w-3.5 h-3.5 text-red-500" /> Delete Record
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Content Hierarchy */}
+        <div className="p-3.5 space-y-2">
+          {/* Monospaced Call Number Badge */}
+          {book.callNo && (
+            <div className="font-mono text-[11px] text-zinc-700 bg-zinc-100/80 px-2 py-0.5 rounded-md border border-zinc-200/80 w-fit flex items-center gap-1 font-medium">
+              <Tag className="w-3 h-3 text-zinc-500" />
+              <span>{book.callNo}</span>
+            </div>
+          )}
+
+          {/* Book Title */}
+          <h3 className="font-semibold text-sm text-zinc-900 line-clamp-2 leading-snug group-hover:text-emerald-700 transition-colors">
+            {book.title}
+          </h3>
+
+          {/* Author & Year */}
+          <p className="text-xs text-zinc-500 font-medium">
+            {book.author} {book.publishYear ? `· ${book.publishYear}` : ""}
+          </p>
+
+          {/* Quiet Metadata Separators */}
+          <div className="text-[11px] text-zinc-400 font-medium flex items-center flex-wrap gap-1 pt-1 border-t border-zinc-100">
+            <span className="text-zinc-700 font-semibold">{book.institute || "ITE"}</span>
+            <span>·</span>
+            <span>{book.yearLevel || "1st Year"}</span>
+            <span>·</span>
+            <span>{book.borrowCount || 0} borrows</span>
           </div>
         </div>
       </div>
 
-      <div className="px-4 pb-4">
-        <div className="flex gap-2">
-          <button
-            onClick={() => onPreview(book)}
-            className="flex-1 text-xs py-1.5 px-2 rounded-md border border-[#106A2E] text-[#106A2E] hover:bg-[#106A2E]/5 transition-colors flex items-center justify-center gap-1 cursor-pointer font-medium"
-          >
-            <Eye className="w-3 h-3" /> Preview
-          </button>
-          <button
-            onClick={() => onBorrow(book)}
-            disabled={book.available === 0}
-            className="flex-1 text-xs py-1.5 px-2 rounded-md bg-[#106A2E] text-white hover:bg-[#0D7856] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1 cursor-pointer font-medium"
-          >
-            <BookMarked className="w-3 h-3" /> Borrow
-          </button>
-        </div>
+      {/* Action Buttons */}
+      <div className="p-3.5 pt-0 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => onPreview(book)}
+          className="w-full py-2 px-2.5 border border-zinc-200 hover:border-zinc-300 text-zinc-700 hover:bg-zinc-50 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5"
+        >
+          <Eye className="w-3.5 h-3.5 text-zinc-500" />
+          <span>Preview</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onBorrow(book)}
+          disabled={!isAvailable}
+          className="w-full py-2 px-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:hover:bg-emerald-700 disabled:cursor-not-allowed"
+        >
+          <BookMarked className="w-3.5 h-3.5" />
+          <span>Borrow</span>
+        </button>
       </div>
     </div>
   );
@@ -1780,6 +1842,177 @@ function DashboardPage({ books, transactions, reservations, librarianName, onNav
   );
 }
 
+// ─── Dense Table View ────────────────────────────────────────────────────────
+function CatalogTableView({
+  books,
+  onPreview,
+  onBorrow,
+  onEdit,
+  onDelete
+}: {
+  books: Book[];
+  onPreview: (b: Book) => void;
+  onBorrow: (b: Book) => void;
+  onEdit: (b: Book) => void;
+  onDelete: (b: Book) => void;
+}) {
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+
+  return (
+    <div className="bg-white rounded-xl border border-zinc-200/80 shadow-xs overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr className="bg-zinc-50/80 border-b border-zinc-200 text-zinc-500 font-semibold uppercase tracking-wider text-[10px]">
+              <th className="py-3 px-4">Book Details</th>
+              <th className="py-3 px-4">Call Number</th>
+              <th className="py-3 px-4">Institute & Details</th>
+              <th className="py-3 px-4">Stock Status</th>
+              <th className="py-3 px-4 text-center">Borrows</th>
+              <th className="py-3 px-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-100">
+            {books.map(book => {
+              const isAvailable = book.available > 0;
+              const inst = (book.institute === "GENED" ? "ITE" : book.institute) || "ITE";
+
+              return (
+                <tr key={book.id} className="hover:bg-zinc-50/60 transition-colors group">
+                  {/* Book Details */}
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-3">
+                      {book.cover ? (
+                        <img
+                          src={book.cover}
+                          alt={book.title}
+                          className="w-9 h-12 object-cover rounded shadow-xs border border-zinc-200/60 flex-shrink-0"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-9 h-12 bg-gradient-to-br from-zinc-800 to-zinc-950 text-white rounded p-1 flex flex-col justify-between flex-shrink-0 shadow-xs">
+                          <span className="text-[8px] font-bold tracking-tighter text-emerald-400">{inst}</span>
+                          <span className="text-[7px] font-medium line-clamp-2 leading-none text-zinc-300">{book.title}</span>
+                        </div>
+                      )}
+                      <div>
+                        <h4 className="font-semibold text-zinc-900 line-clamp-1 group-hover:text-[#106A2E] transition-colors">
+                          {book.title}
+                        </h4>
+                        <p className="text-[11px] text-zinc-500 font-normal">{book.author}</p>
+                        <p className="text-[10px] text-zinc-400 font-mono mt-0.5">ISBN: {book.isbn}</p>
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Call Number */}
+                  <td className="py-3 px-4 whitespace-nowrap">
+                    <span className="inline-block px-2 py-0.5 rounded font-mono text-[11px] bg-zinc-100 text-zinc-800 border border-zinc-200/70">
+                      {book.callNo || "N/A"}
+                    </span>
+                  </td>
+
+                  {/* Institute & Details */}
+                  <td className="py-3 px-4 whitespace-nowrap">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-medium text-zinc-800">{inst}</span>
+                      <span className="text-[11px] text-zinc-500">
+                        {[book.yearLevel, book.semester].filter(Boolean).join(" · ") || "All Levels"}
+                      </span>
+                    </div>
+                  </td>
+
+                  {/* Stock Status */}
+                  <td className="py-3 px-4 whitespace-nowrap">
+                    {isAvailable ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        Available ({book.available}/{book.total || book.available})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-zinc-100 text-zinc-600 border border-zinc-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
+                        Out of Stock (0/{book.total || 1})
+                      </span>
+                    )}
+                  </td>
+
+                  {/* Borrows */}
+                  <td className="py-3 px-4 text-center font-mono text-zinc-600 font-medium">
+                    {book.borrowCount || 0}
+                  </td>
+
+                  {/* Actions */}
+                  <td className="py-3 px-4 text-right whitespace-nowrap relative">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={() => onPreview(book)}
+                        className="px-2.5 py-1.5 rounded-lg border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 transition-colors text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+                        title="Quick View"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-zinc-500" />
+                        Preview
+                      </button>
+
+                      {isAvailable ? (
+                        <button
+                          onClick={() => onBorrow(book)}
+                          className="px-3 py-1.5 rounded-lg bg-[#106A2E] hover:bg-[#0D7856] text-white text-[11px] font-semibold transition-colors shadow-xs cursor-pointer flex items-center gap-1"
+                        >
+                          <BookOpen className="w-3.5 h-3.5" />
+                          Borrow
+                        </button>
+                      ) : (
+                        <button
+                          disabled
+                          className="px-3 py-1.5 rounded-lg bg-zinc-100 text-zinc-400 text-[11px] font-medium cursor-not-allowed border border-zinc-200/60"
+                        >
+                          Unavailable
+                        </button>
+                      )}
+
+                      <div className="relative">
+                        <button
+                          onClick={() => setOpenMenuId(openMenuId === book.id ? null : book.id)}
+                          className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+
+                        {openMenuId === book.id && (
+                          <>
+                            <div className="fixed inset-0 z-30" onClick={() => setOpenMenuId(null)} />
+                            <div className="absolute right-0 mt-1 w-36 bg-white rounded-xl border border-zinc-200 shadow-lg py-1 z-40 text-left animate-in fade-in zoom-in-95 duration-150">
+                              <button
+                                onClick={() => { setOpenMenuId(null); onEdit(book); }}
+                                className="w-full px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 cursor-pointer"
+                              >
+                                <Edit className="w-3.5 h-3.5 text-zinc-500" /> Edit Record
+                              </button>
+                              <button
+                                onClick={() => { setOpenMenuId(null); onDelete(book); }}
+                                className="w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-500" /> Remove Book
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ─── Catalog Page ─────────────────────────────────────────────────────────────
 function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
   books: Book[];
@@ -1796,6 +2029,22 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
   const [category, setCategory] = useState("All");
   const [availability, setAvailability] = useState<"all" | "available" | "borrowed">("all");
   const [sortBy, setSortBy] = useState<"default" | "title" | "borrowed" | "newest">("default");
+  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
+  const [showFilterPopover, setShowFilterPopover] = useState(false);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Keyboard shortcut ⌘K for search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const instituteCounts = useMemo(() => {
     const counts: Record<string, number> = { All: books.length };
@@ -1805,6 +2054,15 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
     });
     return counts;
   }, [books]);
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (selectedYear !== "All Years") count++;
+    if (selectedSemester !== "All Semesters") count++;
+    if (category !== "All") count++;
+    if (availability !== "all") count++;
+    return count;
+  }, [selectedYear, selectedSemester, category, availability]);
 
   const filtered = useMemo(() => {
     return books
@@ -1847,7 +2105,7 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
       });
   }, [books, selectedInstitute, selectedYear, selectedSemester, category, availability, search, sortBy]);
 
-  const hasActiveFilters = selectedInstitute !== "All" || selectedYear !== "All Years" || selectedSemester !== "All Semesters" || category !== "All" || availability !== "all" || search !== "" || sortBy !== "default";
+  const hasActiveFilters = selectedInstitute !== "All" || activeFiltersCount > 0 || search !== "" || sortBy !== "default";
 
   function handleResetFilters() {
     setSelectedInstitute("All");
@@ -1864,43 +2122,54 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
       {/* Header & Primary Action */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-left">
         <div>
-          <h2 className="font-bold text-lg text-foreground flex items-center gap-2">
+          <h2 className="font-bold text-lg text-zinc-900 flex items-center gap-2 tracking-tight">
             <BookOpen className="w-5 h-5 text-[#106A2E]" />
             CDM Library Book Collection
           </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <p className="text-xs text-zinc-500 mt-0.5">
             Prescribed academic references with official MARC 21 catalog tagging across all institutes.
           </p>
         </div>
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
             onClick={onAdd}
-            className="bg-[#106A2E] text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-[#0D7856] transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+            className="bg-[#106A2E] text-white text-xs font-semibold px-3.5 py-2 rounded-lg hover:bg-[#0D7856] transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-98"
           >
             <Plus className="w-4 h-4" /> Add Book Record
           </button>
         </div>
       </div>
 
-      {/* Clean Unified Minimalist Filter Panel */}
-      <div className="bg-white p-4 rounded-xl border border-border shadow-xs space-y-3 text-left">
-        {/* Row 1: Search Bar & Institute Segmented Tabs */}
+      {/* Clean Unified Enterprise Filter Toolbar */}
+      <div className="bg-white p-3.5 rounded-xl border border-zinc-200/80 shadow-xs space-y-3 text-left">
+        {/* Row 1: Integrated Search Input & Institute Segmented Controls */}
         <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
+          {/* Full Width Search Input with shortcut badge */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
             <input
+              ref={searchInputRef}
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by title, author, ISBN, call number, or MARC tags..."
-              className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-border rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all"
+              className="w-full pl-9 pr-14 py-2 bg-zinc-50/80 border border-zinc-200 rounded-lg text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#106A2E]/20 focus:border-[#106A2E] focus:bg-white transition-all text-zinc-900 placeholder:text-zinc-400"
             />
-            {search && (
-              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs font-bold">✕</button>
+            {search ? (
+              <button 
+                onClick={() => setSearch("")} 
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 text-xs font-bold p-0.5 cursor-pointer"
+              >
+                ✕
+              </button>
+            ) : (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-zinc-100 text-zinc-400 border border-zinc-200/80">
+                ⌘K
+              </span>
             )}
           </div>
 
-          {/* Clean Segmented Institute Tabs */}
-          <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-lg self-start lg:self-auto overflow-x-auto max-w-full">
+          {/* Sleek Segmented Institute Filter Control */}
+          <div className="flex items-center gap-1 bg-zinc-100/90 p-1 rounded-xl self-start lg:self-auto overflow-x-auto max-w-full border border-zinc-200/50">
             {INSTITUTES.map(inst => {
               const isSelected = selectedInstitute === inst.code;
               const count = instituteCounts[inst.code] || 0;
@@ -1909,14 +2178,16 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
                 <button
                   key={inst.code}
                   onClick={() => setSelectedInstitute(inst.code)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer ${
                     isSelected
-                      ? "bg-[#106A2E] text-white shadow-xs"
-                      : "text-muted-foreground hover:text-foreground hover:bg-gray-200/60"
+                      ? "bg-white text-zinc-900 shadow-xs border border-zinc-200/60 font-bold"
+                      : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/50"
                   }`}
                 >
                   <span>{label}</span>
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isSelected ? "bg-white/20 text-white" : "bg-gray-200 text-gray-700"}`}>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                    isSelected ? "bg-emerald-50 text-[#106A2E]" : "bg-zinc-200/70 text-zinc-600"
+                  }`}>
                     {count}
                   </span>
                 </button>
@@ -1925,131 +2196,210 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
           </div>
         </div>
 
-        {/* Row 2: Compact Dropdown Filters */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-2.5 pt-2.5 border-t border-gray-100 text-xs">
-          {/* Year Level Select */}
-          <div>
-            <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Year Level</label>
-            <select
-              value={selectedYear}
-              onChange={e => setSelectedYear(e.target.value)}
-              className="w-full px-2.5 py-1.5 bg-gray-50 border border-border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all"
-            >
-              {YEAR_LEVELS.map(yr => (
-                <option key={yr} value={yr}>{yr}</option>
-              ))}
-            </select>
+        {/* Row 2: Unified Filter Toolbar & View Controls */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2.5 border-t border-zinc-100">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Unified Filters Popover Button */}
+            <div className="relative">
+              <button
+                onClick={() => setShowFilterPopover(p => !p)}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeFiltersCount > 0 || showFilterPopover
+                    ? "border-[#106A2E] bg-emerald-50/50 text-[#106A2E]"
+                    : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                }`}
+              >
+                <Filter className="w-3.5 h-3.5 text-current" />
+                <span>Filters</span>
+                {activeFiltersCount > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-[#106A2E] text-white text-[10px] font-bold inline-flex items-center justify-center">
+                    {activeFiltersCount}
+                  </span>
+                )}
+                <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-200 ${showFilterPopover ? "rotate-180" : ""}`} />
+              </button>
+
+              {/* Filter Popover Content */}
+              {showFilterPopover && (
+                <>
+                  <div className="fixed inset-0 z-30" onClick={() => setShowFilterPopover(false)} />
+                  <div className="absolute left-0 mt-1.5 w-72 sm:w-80 bg-white rounded-xl border border-zinc-200 shadow-xl p-4 z-40 text-left animate-in fade-in zoom-in-95 duration-150 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+                      <span className="font-bold text-xs text-zinc-900 flex items-center gap-1.5">
+                        <Filter className="w-3.5 h-3.5 text-[#106A2E]" /> Detailed Filters
+                      </span>
+                      {activeFiltersCount > 0 && (
+                        <button
+                          onClick={() => {
+                            setSelectedYear("All Years");
+                            setSelectedSemester("All Semesters");
+                            setCategory("All");
+                            setAvailability("all");
+                          }}
+                          className="text-[11px] text-red-600 hover:underline font-semibold cursor-pointer"
+                        >
+                          Reset Filters
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Year Level */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-zinc-500 mb-1">Year Level</label>
+                      <select
+                        value={selectedYear}
+                        onChange={e => setSelectedYear(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#106A2E]"
+                      >
+                        {YEAR_LEVELS.map(yr => (
+                          <option key={yr} value={yr}>{yr}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Semester */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-zinc-500 mb-1">Semester</label>
+                      <select
+                        value={selectedSemester}
+                        onChange={e => setSelectedSemester(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#106A2E]"
+                      >
+                        {SEMESTERS.map(sem => (
+                          <option key={sem} value={sem}>{sem}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Discipline */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-zinc-500 mb-1">Discipline</label>
+                      <select
+                        value={category}
+                        onChange={e => setCategory(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#106A2E] truncate"
+                      >
+                        <option value="All">All Disciplines</option>
+                        <option value="Computer Studies & Engineering (ICS - BSIT / BSCPE)">ICS (IT & CpE)</option>
+                        <option value="Teacher Education & GenEd (ITE - BEED / BTLED / BECED / BSED)">ITE (Education & GenEd)</option>
+                        <option value="Business & Entrepreneurship (IBE - BSBA / BS ENTREP)">IBE (Business & Entrep)</option>
+                      </select>
+                    </div>
+
+                    {/* Stock Status */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-zinc-500 mb-1">Stock Status</label>
+                      <select
+                        value={availability}
+                        onChange={e => setAvailability(e.target.value as any)}
+                        className="w-full px-2.5 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg text-xs font-medium text-zinc-800 focus:outline-none focus:ring-1 focus:ring-[#106A2E]"
+                      >
+                        <option value="all">All Statuses</option>
+                        <option value="available">Available on Shelf</option>
+                        <option value="borrowed">Checked Out (0 Available)</option>
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Subtle Sort By Selector */}
+            <div className="flex items-center gap-1.5 bg-white border border-zinc-200 rounded-lg px-2.5 py-1.5 text-xs text-zinc-700">
+              <ArrowUpDown className="w-3.5 h-3.5 text-zinc-400" />
+              <span className="text-zinc-400 font-normal hidden sm:inline">Sort by:</span>
+              <select
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value as any)}
+                className="bg-transparent font-medium focus:outline-none text-zinc-800 cursor-pointer pr-1"
+              >
+                <option value="default">Default Order</option>
+                <option value="title">Title (A → Z)</option>
+                <option value="borrowed">Most Borrowed</option>
+                <option value="newest">Newest Year</option>
+              </select>
+            </div>
           </div>
 
-          {/* Semester Select */}
-          <div>
-            <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Semester</label>
-            <select
-              value={selectedSemester}
-              onChange={e => setSelectedSemester(e.target.value)}
-              className="w-full px-2.5 py-1.5 bg-gray-50 border border-border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all"
+          {/* Right side: View Mode Toggle */}
+          <div className="flex items-center gap-1 bg-zinc-100/90 p-0.5 rounded-lg border border-zinc-200/60">
+            <button
+              onClick={() => setViewMode("grid")}
+              className={`p-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer ${
+                viewMode === "grid"
+                  ? "bg-white text-zinc-900 shadow-xs border border-zinc-200/60"
+                  : "text-zinc-500 hover:text-zinc-900"
+              }`}
+              title="Grid View"
             >
-              {SEMESTERS.map(sem => (
-                <option key={sem} value={sem}>{sem}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Category Select */}
-          <div className="col-span-2 sm:col-span-1">
-            <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Discipline</label>
-            <select
-              value={category}
-              onChange={e => setCategory(e.target.value)}
-              className="w-full px-2.5 py-1.5 bg-gray-50 border border-border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all truncate"
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-[11px] font-semibold">Grid</span>
+            </button>
+            <button
+              onClick={() => setViewMode("table")}
+              className={`p-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1 cursor-pointer ${
+                viewMode === "table"
+                  ? "bg-white text-zinc-900 shadow-xs border border-zinc-200/60"
+                  : "text-zinc-500 hover:text-zinc-900"
+              }`}
+              title="Dense Table View"
             >
-              <option value="All">All Disciplines</option>
-              <option value="Computer Studies & Engineering (ICS - BSIT / BSCPE)">ICS (IT & CpE)</option>
-              <option value="Teacher Education & GenEd (ITE - BEED / BTLED / BECED / BSED)">ITE (Education & GenEd)</option>
-              <option value="Business & Entrepreneurship (IBE - BSBA / BS ENTREP)">IBE (Business & Entrep)</option>
-            </select>
-          </div>
-
-          {/* Stock Availability */}
-          <div>
-            <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Stock Status</label>
-            <select
-              value={availability}
-              onChange={e => setAvailability(e.target.value as any)}
-              className="w-full px-2.5 py-1.5 bg-gray-50 border border-border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all"
-            >
-              <option value="all">All Status</option>
-              <option value="available">Available on Shelf</option>
-              <option value="borrowed">Checked Out (0 Avail)</option>
-            </select>
-          </div>
-
-          {/* Sort Option */}
-          <div className="col-span-2 sm:col-span-1">
-            <label className="block text-[11px] font-semibold text-muted-foreground mb-1">Sort Catalog</label>
-            <select
-              value={sortBy}
-              onChange={e => setSortBy(e.target.value as any)}
-              className="w-full px-2.5 py-1.5 bg-gray-50 border border-border rounded-lg text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#106A2E] focus:bg-white transition-all"
-            >
-              <option value="default">Default Order</option>
-              <option value="title">Title (A &rarr; Z)</option>
-              <option value="borrowed">Most Borrowed</option>
-              <option value="newest">Newest Year</option>
-            </select>
+              <List className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-[11px] font-semibold">Table</span>
+            </button>
           </div>
         </div>
 
-        {/* Active Filter Chips & Summary */}
+        {/* Active Filter Chips Bar */}
         {hasActiveFilters && (
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-100 text-xs">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-semibold text-muted-foreground">Active:</span>
+              <span className="text-[11px] font-semibold text-zinc-400">Active:</span>
               {selectedInstitute !== "All" && (
-                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-emerald-200">
-                  {selectedInstitute}
-                  <button onClick={() => setSelectedInstitute("All")} className="hover:text-emerald-950 font-bold">✕</button>
+                <span className="inline-flex items-center gap-1 bg-zinc-100 text-zinc-800 text-[11px] font-medium px-2 py-0.5 rounded-md border border-zinc-200">
+                  Institute: {selectedInstitute}
+                  <button onClick={() => setSelectedInstitute("All")} className="hover:text-zinc-950 font-bold ml-0.5">✕</button>
                 </span>
               )}
               {selectedYear !== "All Years" && (
-                <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-blue-200">
+                <span className="inline-flex items-center gap-1 bg-zinc-100 text-zinc-800 text-[11px] font-medium px-2 py-0.5 rounded-md border border-zinc-200">
                   {selectedYear}
-                  <button onClick={() => setSelectedYear("All Years")} className="hover:text-blue-950 font-bold">✕</button>
+                  <button onClick={() => setSelectedYear("All Years")} className="hover:text-zinc-950 font-bold ml-0.5">✕</button>
                 </span>
               )}
               {selectedSemester !== "All Semesters" && (
-                <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-amber-200">
+                <span className="inline-flex items-center gap-1 bg-zinc-100 text-zinc-800 text-[11px] font-medium px-2 py-0.5 rounded-md border border-zinc-200">
                   {selectedSemester}
-                  <button onClick={() => setSelectedSemester("All Semesters")} className="hover:text-amber-950 font-bold">✕</button>
+                  <button onClick={() => setSelectedSemester("All Semesters")} className="hover:text-zinc-950 font-bold ml-0.5">✕</button>
                 </span>
               )}
               {category !== "All" && (
-                <span className="inline-flex items-center gap-1 bg-purple-50 text-purple-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-purple-200">
-                  Category
-                  <button onClick={() => setCategory("All")} className="hover:text-purple-950 font-bold">✕</button>
+                <span className="inline-flex items-center gap-1 bg-zinc-100 text-zinc-800 text-[11px] font-medium px-2 py-0.5 rounded-md border border-zinc-200">
+                  Discipline Filter
+                  <button onClick={() => setCategory("All")} className="hover:text-zinc-950 font-bold ml-0.5">✕</button>
                 </span>
               )}
               {availability !== "all" && (
-                <span className="inline-flex items-center gap-1 bg-teal-50 text-teal-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-teal-200">
+                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 text-[11px] font-medium px-2 py-0.5 rounded-md border border-emerald-200">
                   {availability === "available" ? "In Stock" : "Checked Out"}
-                  <button onClick={() => setAvailability("all")} className="hover:text-teal-950 font-bold">✕</button>
+                  <button onClick={() => setAvailability("all")} className="hover:text-emerald-950 font-bold ml-0.5">✕</button>
                 </span>
               )}
               {search && (
-                <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-800 text-[11px] font-medium px-2 py-0.5 rounded-full border border-gray-200">
+                <span className="inline-flex items-center gap-1 bg-zinc-100 text-zinc-800 text-[11px] font-medium px-2 py-0.5 rounded-md border border-zinc-200">
                   "{search}"
-                  <button onClick={() => setSearch("")} className="hover:text-gray-950 font-bold">✕</button>
+                  <button onClick={() => setSearch("")} className="hover:text-zinc-950 font-bold ml-0.5">✕</button>
                 </span>
               )}
               <button
                 onClick={handleResetFilters}
-                className="text-[11px] text-red-600 hover:text-red-700 hover:underline ml-1 font-semibold cursor-pointer"
+                className="text-[11px] text-red-600 hover:text-red-700 hover:underline font-semibold cursor-pointer ml-1"
               >
                 Clear all
               </button>
             </div>
-            <span className="text-[11px] text-muted-foreground font-medium">
-              Showing <strong className="text-foreground font-bold">{filtered.length}</strong> of {books.length} books
+            <span className="text-[11px] text-zinc-500 font-medium">
+              Showing <strong className="text-zinc-900 font-bold">{filtered.length}</strong> of {books.length} volumes
             </span>
           </div>
         )}
@@ -2058,26 +2408,35 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
       {/* Catalog Counter (when no filters) */}
       {!hasActiveFilters && (
         <div className="flex items-center justify-between text-left px-1">
-          <p className="text-xs text-muted-foreground font-medium">
-            Showing all <span className="font-bold text-foreground">{filtered.length}</span> cataloged volumes
+          <p className="text-xs text-zinc-500 font-medium">
+            Showing all <span className="font-bold text-zinc-900">{filtered.length}</span> cataloged volumes
           </p>
         </div>
       )}
 
+      {/* Content Rendering (Grid or Dense Table) */}
       {filtered.length === 0 ? (
-        <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
-          <BookOpen className="w-10 h-10 text-muted-foreground/50 mx-auto mb-3" />
-          <h3 className="font-bold text-sm text-foreground">No Books Found</h3>
-          <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+        <div className="bg-white rounded-xl border border-dashed border-zinc-300 p-12 text-center">
+          <BookOpen className="w-10 h-10 text-zinc-400/60 mx-auto mb-3" />
+          <h3 className="font-bold text-sm text-zinc-900">No Books Found</h3>
+          <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">
             No matching books for the current filter criteria. Try selecting another institute or resetting filters.
           </p>
           <button
             onClick={handleResetFilters}
-            className="mt-4 px-4 py-2 bg-[#106A2E] text-white rounded-lg text-xs font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer"
+            className="mt-4 px-4 py-2 bg-[#106A2E] text-white rounded-lg text-xs font-semibold hover:bg-[#0D7856] transition-colors cursor-pointer shadow-xs"
           >
             Reset All Filters
           </button>
         </div>
+      ) : viewMode === "table" ? (
+        <CatalogTableView
+          books={filtered}
+          onPreview={onPreview}
+          onBorrow={onBorrow}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {filtered.map(book => (
@@ -2095,6 +2454,7 @@ function CatalogPage({ books, onBorrow, onPreview, onAdd, onEdit, onDelete }: {
     </div>
   );
 }
+
 
 // ─── Borrow Page ──────────────────────────────────────────────────────────────
 function BorrowPage({ books, students, librarianName, preselectedBook, onDone, onRefresh }: {
@@ -3937,36 +4297,9 @@ function Sidebar({ currentPage, onNavigate, librarianName, librarianRole, onLogo
 
       {/* Footer */}
       <div className="p-3 border-t border-white/15">
-        {!collapsed ? (
-          <button 
-            type="button"
-            onClick={onOpenProfile}
-            className="w-full flex items-center gap-2.5 p-2.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors mb-2 text-left cursor-pointer group"
-            title="Click to view Profile & Change Password"
-          >
-            <div className="w-8 h-8 rounded-full bg-[#F4D35E] flex items-center justify-center flex-shrink-0">
-              <User className="w-4 h-4 text-[#1F1F1F]" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-white text-xs font-semibold truncate group-hover:text-[#F4D35E] transition-colors">{librarianName}</p>
-              <p className="text-white/50 text-xs truncate">{librarianRole || "Librarian"}</p>
-            </div>
-          </button>
-        ) : (
-          <button 
-            type="button"
-            onClick={onOpenProfile}
-            className="w-full flex justify-center mb-2 p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-            title="Profile & Password Settings"
-          >
-            <div className="w-8 h-8 rounded-full bg-[#F4D35E] flex items-center justify-center">
-              <User className="w-4 h-4 text-[#1F1F1F]" />
-            </div>
-          </button>
-        )}
-        <button onClick={onLogout} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-colors cursor-pointer">
+        <button onClick={onLogout} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-white/70 hover:bg-white/10 hover:text-white transition-colors cursor-pointer">
           <LogOut className="w-4 h-4 flex-shrink-0" />
-          {!collapsed && <span className="text-xs font-medium">Logout</span>}
+          {!collapsed && <span className="text-xs font-medium">Sign Out</span>}
         </button>
       </div>
     </div>
@@ -4223,7 +4556,7 @@ function MainLayout({ children, currentPage, librarianName, librarianRole, books
           </div>
         </header>
         {/* Content */}
-        <main className="flex-1 overflow-y-auto bg-[#F1F1F1] p-6">
+        <main className="flex-1 overflow-y-auto bg-zinc-50/50 p-6">
           {children}
         </main>
       </div>
@@ -5320,10 +5653,10 @@ export default function App() {
         fetch("/api/reservations").then(r => r.json()),
         fetch("/api/students").then(r => r.json())
       ]);
-      setBooks(resBooks);
-      setTransactions(resTxns);
-      setReservations(resReservations);
-      setStudents(resStudents);
+      if (Array.isArray(resBooks)) setBooks(resBooks);
+      if (Array.isArray(resTxns)) setTransactions(resTxns);
+      if (Array.isArray(resReservations)) setReservations(resReservations);
+      if (Array.isArray(resStudents)) setStudents(resStudents);
     } catch (err) {
       console.error("Error fetching data:", err);
     } finally {
@@ -5336,10 +5669,10 @@ export default function App() {
 
     fetchAllData();
 
-    // Real-time synchronization: Auto-poll every 3 seconds to catch mobile student borrow/reservation requests
+    // Real-time synchronization: Auto-poll every 8 seconds to catch mobile student borrow/reservation requests
     const pollInterval = setInterval(() => {
       fetchAllData();
-    }, 3000);
+    }, 8000);
 
     const handleWindowFocus = () => {
       fetchAllData();

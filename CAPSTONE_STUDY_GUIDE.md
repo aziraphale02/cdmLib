@@ -167,7 +167,7 @@ Our catalog complies with the international **MARC 21 (Machine-Readable Catalogi
 | **Password Hashing** | Node.js `crypto.pbkdf2Sync` with SHA-512 and a 16-byte random salt per user (10,000 iterations). | Defends against plaintext exposure and Rainbow Table attacks. |
 | **Constant-Time Comparison** | `crypto.timingSafeEqual` during login authentication. | Eliminates timing attacks where attackers guess password hashes based on response latency. |
 | **Token-Based Auth** | Signed JSON Web Tokens (JWT) with 24-hour expiration (`authenticateToken` middleware). | Stateless session security; protects restricted endpoints against unauthorized requests. |
-| **Brute-Force Rate Limiting** | In-Memory Sliding-Window Rate Limiter (`authLimiter`: 15 requests / 15 mins; `apiLimiter`: 300 requests / 15 mins). | Blocks automated dictionary attacks, credential stuffing, and Denial of Service (DoS) attempts. |
+| **Brute-Force Rate Limiting** | In-Memory Sliding-Window Rate Limiter (`authLimiter`: 5 requests / 15 mins; `apiLimiter`: 300 requests / 15 mins). | Blocks automated dictionary attacks, credential stuffing, and Denial of Service (DoS) attempts. |
 | **SQL Injection Prevention** | `better-sqlite3` parameterized prepared statements (`?` placeholders). | Sanitizes all inputs, completely eliminating SQL injection vulnerabilities. |
 | **Staff Role Hierarchy** | `Head Librarian` vs. `Librarian` with admin approval workflow. | Prevents unauthorized staff registrations from accessing sensitive patron or system data. |
 
@@ -278,7 +278,7 @@ Follow this exact 5-step sequence during your live presentation:
 > **Answer:** *"MARC 21 (Machine-Readable Cataloging) is the global standard for library bibliographic data. By structuring our catalog with MARC 020 (ISBN), MARC 082 (Dewey Decimal / Call Numbers), MARC 100 (Author), and MARC 245 (Title), our system ensures interoperability with national and global library networks and trains CDM students and librarians on industry-standard cataloging."*
 
 ### Q5: *"How do you prevent brute force password guessing?"*
-> **Answer:** *"We implemented an in-memory rate limiter (`authLimiter`) on the `/api/auth/login` route. It tracks IP addresses in sliding 15-minute windows and limits attempts to 15 requests. Exceeding this threshold results in an HTTP 429 'Too Many Requests' response, completely mitigating automated dictionary attacks."*
+> **Answer:** *"We implemented an in-memory rate limiter (`authLimiter`) on the `/api/auth/login` route. It tracks IP addresses in sliding 15-minute windows and limits attempts to 5 requests. Exceeding this threshold results in an HTTP 429 'Too Many Requests' response, completely mitigating automated dictionary attacks."*
 
 ### Q6: *"Why is there a physical replacement rule instead of paying a cash fine for lost books?"*
 > **Answer:** *"In academic institutions, out-of-print textbooks and specialized curriculum references are difficult for librarians to procure quickly with cash. Requiring the student to provide the exact physical title and ISBN guarantees that library academic holdings and physical stock counts remain complete for succeeding batches of students."*

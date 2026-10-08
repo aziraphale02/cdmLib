@@ -271,7 +271,7 @@
       <li><strong>PBKDF2 Cryptographic Salt Hashing:</strong> Passwords are protected via PBKDF2 (SHA-512, 1000 iterations, 16-byte random salts). Plaintext passwords are never stored.</li>
       <li><strong>Stateless JWT Authentication:</strong> API endpoints verify HMAC-SHA256 tokens with 24-hour expiration for secure session control.</li>
       <li><strong>Security Audit Logger (<code>audit_logs</code>):</strong> Automatically tracks all sensitive transactions, logins, role adjustments, and IP addresses.</li>
-      <li><strong>Multi-Tier Rate Limiting:</strong> Enforces a strict 15 attempts / 15 mins ceiling on authentication routes to stop brute-force attacks.</li>
+      <li><strong>Multi-Tier Rate Limiting:</strong> Enforces a strict 5 attempts / 15 mins ceiling on authentication routes to stop brute-force attacks.</li>
       <li><strong>OWASP Headers:</strong> Active protection via <code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>, and <code>Referrer-Policy</code>.</li>
     </ul>
   </div>

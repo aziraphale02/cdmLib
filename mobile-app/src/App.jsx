@@ -132,7 +132,11 @@ const TOKENS = {
 
 const API_BASE = (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_LIBRARY_API_URL) 
   ? import.meta.env.VITE_LIBRARY_API_URL 
-  : (typeof window !== "undefined" && window.__LIBRARY_API_BASE__ ? window.__LIBRARY_API_BASE__ : "http://localhost:5002/api");
+  : (typeof window !== "undefined" && window.__LIBRARY_API_BASE__ 
+      ? window.__LIBRARY_API_BASE__ 
+      : (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
+          ? `${window.location.origin}/api` 
+          : "http://localhost:5002/api"));
 
 const INSTITUTES = [
   { id: "ALL", name: "All Institutes", short: "ALL" },

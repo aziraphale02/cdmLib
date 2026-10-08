@@ -98,6 +98,7 @@ function authenticateToken(req, res, next) {
 }
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 5002;
 
 // Disable technology disclosure header
@@ -172,7 +173,8 @@ function createRateLimiter({ windowMs = 15 * 60 * 1000, max = 100, message = 'To
   }, 5 * 60 * 1000).unref();
 
   return (req, res, next) => {
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const rawForwarded = req.headers['x-forwarded-for'];
+    const ip = (typeof rawForwarded === 'string' ? rawForwarded.split(',')[0].trim() : null) || req.ip || req.socket?.remoteAddress || '127.0.0.1';
     const now = Date.now();
 
     let record = requests.get(ip);
@@ -196,18 +198,18 @@ function createRateLimiter({ windowMs = 15 * 60 * 1000, max = 100, message = 'To
   };
 }
 
-// General API Rate Limiter (Max 300 requests per 15 mins per IP)
+// General API Rate Limiter (Max 10,000 requests per 15 mins per IP to support real-time polling)
 const apiLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 10000,
   message: 'Too many requests from this IP. Please try again after 15 minutes.'
 });
 
-// Strict Auth Rate Limiter (Max 15 attempts per 15 mins per IP to prevent brute-force attacks)
+// Strict Auth Rate Limiter (Max 5 attempts per 15 mins per IP to prevent brute-force attacks)
 const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 15,
-  message: 'Too many authentication attempts. Please try again after 15 minutes.'
+  max: 5,
+  message: 'Too many authentication attempts (maximum 5 attempts per 15 minutes). Please try again after 15 minutes.'
 });
 
 app.use('/api', apiLimiter);
